@@ -148,22 +148,22 @@ overwrite chapters you didn't touch.)
 
 ### Reference detection — your continuity bible, automated
 
-Write a character card:
+Write a character card (using a public-domain example):
 
 ```markdown
-## Elias Vane
+## Odysseus
 - **Role:** protagonist
 ```
 
-Put `names: [Elias, Eli]` in its frontmatter to add aliases. Now when your
-scene prose mentions "Elias Vane", Storyteller notices:
+Put `names: [Ody]` in its frontmatter to add aliases. Now when your
+scene prose mentions "Odysseus", Storyteller notices:
 
 - **On save**, it auto-links confident matches (full names are 100% confident;
   a first name is 70% if it's unique in your story) by adding them to the
   scene's frontmatter:
   ```yaml
-  chars: [Elias Vane]
-  locs: [Merrowgate]
+  chars: [Odysseus]
+  locs: [Ithaca]
   ```
 - **Manually**, `:StoryDetect` scans the whole project; `:StoryDetectScene`
   checks the scene under your cursor and asks what to do (link / dismiss /
@@ -180,7 +180,7 @@ names are remembered in the scene's `ignore:` list and won't be suggested again.
 `:StoryCorkboard` (or `<leader>sb`) shows every scene as a card:
 
 ```
-[draft]  Scene 1 — Arrival — Elias Vane — 412 words · Merrowgate
+[draft]  Scene 1 — Arrival — Odysseus — 412 words · Ithaca
 ```
 
 - `<CR>` open that scene at its heading.
@@ -222,18 +222,18 @@ back and parses it — no corrupting your file).
 ```yaml
 ---
 type: chapter          # chapter | scene | reference
-pov: Elias Vane        # whose head are we in
-location: Merrowgate
+pov: Odysseus          # whose head are we in
+location: Ithaca
 status: draft          # outline | draft | revision | done | unused
 planning: flexible     # fixed | flexible | undefined
 target: 5000           # word goal for this chapter
-chars: [Elias Vane]    # linked references (auto-detected)
-locs: [Merrowgate]
+chars: [Odysseus]      # linked references (auto-detected)
+locs: [Ithaca]
 items: []
 orgs: []
 ignore: []             # dismissed detection suggestions
 tags: [act2, flashback]
-names: [Elias, Eli]    # aliases (on reference cards, for detection)
+names: [Ody]           # aliases (on reference cards, for detection)
 ---
 ```
 
