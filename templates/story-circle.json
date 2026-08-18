@@ -1,0 +1,80 @@
+{
+  "id": "story-circle",
+  "name": "Story Circle",
+  "source": "Kindling story-circle",
+  "description": "Dan Harmon's eight-step story circle in three acts: the character wants something, goes into an unfamiliar situation, adapts and takes the prize, then returns changed.",
+  "project_types": ["novel"],
+  "structure": [
+    {
+      "title": "Act 1 · The Departure",
+      "children": [
+        {
+          "title": "You",
+          "synopsis": "A character is in a zone of comfort.",
+          "scenes": [
+            {"title": "The Familiar", "synopsis": "Establish a living, breathing ordinary state."}
+          ]
+        },
+        {
+          "title": "Need",
+          "synopsis": "But they want something they don't yet know they need.",
+          "scenes": [
+            {"title": "The Want", "synopsis": "Name the gap between comfort and desire."}
+          ]
+        },
+        {
+          "title": "Go",
+          "synopsis": "They enter an unfamiliar situation, crossing a threshold.",
+          "scenes": [
+            {"title": "The Crossing", "synopsis": "The character leaves comfort for the unknown."}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Act 2 · The Search",
+      "children": [
+        {
+          "title": "Search",
+          "synopsis": "They adapt to the new situation and stumble toward a goal.",
+          "scenes": [
+            {"title": "Adaptation", "synopsis": "Trial and error explores the new world."}
+          ]
+        },
+        {
+          "title": "Find",
+          "synopsis": "They find what they've been looking for, superficially.",
+          "scenes": [
+            {"title": "The Discovery", "synopsis": "The surface want comes within reach."}
+          ]
+        },
+        {
+          "title": "Take",
+          "synopsis": "They take it, but paying a cost or being changed by the price.",
+          "scenes": [
+            {"title": "The Price", "synopsis": "The gain costs something the character must surrender."}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Act 3 · The Return",
+      "children": [
+        {
+          "title": "Return",
+          "synopsis": "They return to the familiar with hard-won change.",
+          "scenes": [
+            {"title": "Homeward", "synopsis": "The changed character re-enters the starting world."}
+          ]
+        },
+        {
+          "title": "Change",
+          "synopsis": "Having changed, the circle completes and the story lands.",
+          "scenes": [
+            {"title": "The Last Beat", "synopsis": "Show the transformation by contrast, not by telling."}
+          ]
+        }
+      ]
+    }
+  ]
+}

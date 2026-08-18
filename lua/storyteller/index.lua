@@ -72,14 +72,25 @@ local function parse_chapter(path)
     scenes = {},
   }
   -- H1 title + number
-  local h1 = lines[1] and lines[1]:match("^#%s+(.*)$")
+    -- H1 title + number (scan the whole file — frontmatter may precede it)
+  local h1
+  for _, ln in ipairs(lines) do
+    local h = ln:match("^#%s+(.*)$")
+    if h then
+      h1 = h
+      break
+    end
+  end
   if h1 then
     local num, after = h1:match("^Chapter%s+(%d+)%s*[:.–—-]?(.-)%s*$")
     if num then
       info.number = tonumber(num)
-      info.title = (after ~= "" and after) or h1
-    else
-      info.title = h1
+      if after then
+        info.title = (after:gsub("^%s+", ""):gsub("%s+$", ""))
+      end
+      info.title = (info.title ~= "" and info.title) or h1
+    elseif h1 ~= "" then
+      info.title = (h1:gsub("^%s+", ""):gsub("%s+$", ""))
     end
   end
 
@@ -135,23 +146,29 @@ local function parse_chapter(path)
   return info
 end
 
--- A reference card: H1/H2 title, plus `names:` aliases from frontmatter.
+-- A reference card: H1/H2 title (template cards use `## Name — Role`), plus
+-- `names:` aliases from frontmatter. The primary name is the leading token
+-- before an em/en-dash or colon.
 local function parse_reference(path)
   local lines = vim.fn.readfile(path)
   local title = nil
-  for i = 1, math.min(#lines, 12) do
-    title = (title or lines[i]:match("^#%s+(.*)$"))
-    if title then
+  for i = 1, math.min(#lines, 16) do
+    local h = lines[i]:match("^#+%s+(.*)$")
+    if h then
+      title = h
       break
     end
   end
   title = title or vim.fn.fnamemodify(path, ":t:r"):gsub("^_", "")
+  -- primary name: stop at ` — ` / `–` / `:`
+  local name = title:match("^([^—–:]+)") or title
+  name = name:gsub("%s+$", "")
   local meta = require("storyteller.metadata").read(path)
   local names = (meta and meta.meta.names) or {}
   if #names == 0 then
-    names = { title }
+    names = { name }
   end
-  return { path = path, title = title, names = names, meta = meta and meta.meta or {} }
+  return { path = path, title = title, name = name, names = names, meta = meta and meta.meta or {} }
 end
 
 -- --- Public API -------------------------------------------------------------

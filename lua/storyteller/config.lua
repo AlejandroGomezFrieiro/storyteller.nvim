@@ -6,6 +6,8 @@ local M = {}
 local DEFAULTS = {
   -- How the project root is detected (in order of preference).
   markers = { ".storyteller", ".storyteller.toml" },
+  -- Optional user override dir for story-structure templates (`templates_dir/`).
+  templates_dir = nil,
   -- Whether autocmds auto-run for markdown files inside a project.
   autocmds = true,
   -- Detection: auto-run reference detection on save for the current scene.

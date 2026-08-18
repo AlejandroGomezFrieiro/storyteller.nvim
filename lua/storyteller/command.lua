@@ -25,6 +25,9 @@ M.list = function()
 end
 
 M.setup = function()
+  if M._materialized then
+    return
+  end
   local defined = {}
   for name, entry in pairs(registry) do
     if not defined[name] then
@@ -32,6 +35,7 @@ M.setup = function()
       defined[name] = true
     end
   end
+  M._materialized = true
 end
 
 return M

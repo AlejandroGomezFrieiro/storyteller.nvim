@@ -1,0 +1,108 @@
+{
+  "id": "heroes-journey",
+  "name": "Hero's Journey",
+  "source": "Kindling hero's-journey",
+  "description": "Campbell's 12-stage monomyth in three acts: departure, initiation, and return. The hero leaves the ordinary world, descends through trials and ordeal, and returns transformed with an elixir.",
+  "project_types": ["novel"],
+  "structure": [
+    {
+      "title": "Act 1 · Departure",
+      "children": [
+        {
+          "title": "The Ordinary World",
+          "synopsis": "Show the hero's starting life, limitations, and unspoken need.",
+          "scenes": [
+            {"title": "Everyday Life", "synopsis": "The hero exists in a familiar world, restless or unaware."}
+          ]
+        },
+        {
+          "title": "The Call to Adventure",
+          "synopsis": "An event or messenger invites the hero across a threshold.",
+          "scenes": [
+            {"title": "The Invitation", "synopsis": "A disruption puts the adventure within reach."}
+          ]
+        },
+        {
+          "title": "Refusal of the Call",
+          "synopsis": "Fear or duty makes the hero hesitate before committing.",
+          "scenes": [
+            {"title": "The Doubt", "synopsis": "The hero resists, naming why the call cannot be answered."}
+          ]
+        },
+        {
+          "title": "Meeting the Mentor",
+          "synopsis": "A guide offers wisdom, tools, or a gift that eases the decision.",
+          "scenes": [
+            {"title": "The Gift", "synopsis": "The mentor's counsel hardens the hero's resolve."}
+          ]
+        },
+        {
+          "title": "Crossing the Threshold",
+          "synopsis": "The hero commits and leaves the ordinary world for the unknown.",
+          "scenes": [
+            {"title": "The Leap", "synopsis": "The hero passes a point of no return."}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Act 2 · Initiation",
+      "children": [
+        {
+          "title": "Tests, Allies, and Enemies",
+          "synopsis": "The hero is tested, makes allies, and learns the new world's rules.",
+          "scenes": [
+            {"title": "Trials", "synopsis": "Small challenges map the terrain and cost of the journey."}
+          ]
+        },
+        {
+          "title": "Approach to the Inmost Cave",
+          "synopsis": "The hero nears the site of the central ordeal, preparing.",
+          "scenes": [
+            {"title": "Preparing", "synopsis": "The party gathers, plans, and steels itself."}
+          ]
+        },
+        {
+          "title": "The Ordeal",
+          "synopsis": "A near-fatal test against death or the antagonist.",
+          "scenes": [
+            {"title": "The Trial", "synopsis": "The hero faces their greatest fear or enemy."}
+          ]
+        },
+        {
+          "title": "The Reward",
+          "synopsis": "Seizing the sword: the hero takes the treasure or knowledge won.",
+          "scenes": [
+            {"title": "The Prize", "synopsis": "The hero claims what the ordeal earned."}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Act 3 · Return",
+      "children": [
+        {
+          "title": "The Road Back",
+          "synopsis": "The hero turns toward home, pursued or irrevocably changed.",
+          "scenes": [
+            {"title": "Turning Home", "synopsis": "The consequences of the ordeal chase the hero back."}
+          ]
+        },
+        {
+          "title": "The Resurrection",
+          "synopsis": "A final test proving the hero has changed; a climactic stand.",
+          "scenes": [
+            {"title": "The Final Ordeal", "synopsis": "The hero is reborn, resolving the journey's central battle."}
+          ]
+        },
+        {
+          "title": "Return with the Elixir",
+          "synopsis": "The hero returns transformed, bearing a gift for the ordinary world.",
+          "scenes": [
+            {"title": "Homecoming", "synopsis": "The hero lands the lesson, closing the once-ordinary world."}
+          ]
+        }
+      ]
+    }
+  ]
+}

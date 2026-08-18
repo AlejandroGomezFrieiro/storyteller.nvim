@@ -1,0 +1,129 @@
+{
+  "id": "save-the-cat",
+  "name": "Save the Cat",
+  "source": "Kindling save-the-cat",
+  "description": "Blake Snyder's 15-beat plot sheet in three acts. Act I sets up the hook and dilemma; Act II fun and games builds the promise of the premise through the midpoint and dark night; Act III finale and final image resolve the theme.",
+  "project_types": ["novel"],
+  "structure": [
+    {
+      "title": "Act 1 · Setup",
+      "children": [
+        {
+          "title": "Opening Image",
+          "synopsis": "A snapshot of the protagonist's world before the story changes it.",
+          "scenes": [
+            {"title": "Before", "synopsis": "Establish tone and a sense of who the protagonist is now."}
+          ]
+        },
+        {
+          "title": "Theme Stated",
+          "synopsis": "A hint of the story's central theme or lesson, stated early.",
+          "scenes": [
+            {"title": "The Hint", "synopsis": "A line or moment seeds what the journey will teach."}
+          ]
+        },
+        {
+          "title": "Set-up",
+          "synopsis": "Introduce the cast, the wants, and the flawed status quo.",
+          "scenes": [
+            {"title": "The Cast", "synopsis": "Show relationships and the everyday lacking behind the surface."}
+          ]
+        },
+        {
+          "title": "Catalyst",
+          "synopsis": "A sudden event knocks the status quo off its rails.",
+          "scenes": [
+            {"title": "The Tipping Event", "synopsis": "The ordinary world is upended and the story moves."}
+          ]
+        },
+        {
+          "title": "Debate",
+          "synopsis": "The protagonist questions the road ahead, weighing the leap.",
+          "scenes": [
+            {"title": "The Question", "synopsis": "Can I? Should I? Doubt sharpens the choice."}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Act 2 · Confrontation",
+      "children": [
+        {
+          "title": "Break into Two",
+          "synopsis": "The protagonist leaves the old world and commits to the new.",
+          "scenes": [
+            {"title": "The Choice Made", "synopsis": "Action, not speech, begins Act Two."}
+          ]
+        },
+        {
+          "title": "B Story",
+          "synopsis": "A subplot that shadows the theme, often a relationship.",
+          "scenes": [
+            {"title": "The Second Thread", "synopsis": "A connection opens, commenting on the main story."}
+          ]
+        },
+        {
+          "title": "Fun and Games",
+          "synopsis": "The promise of the premise: the audience savors what the concept delivers.",
+          "scenes": [
+            {"title": "The Payoff Play", "synopsis": "Playful, vibrant scenes of the new world in full swing."}
+          ]
+        },
+        {
+          "title": "Midpoint",
+          "synopsis": "A major shift raises the stakes; the protagonist gains or loses ground.",
+          "scenes": [
+            {"title": "The Turn", "synopsis": "Revelation or defeat transforms the trajectory."}
+          ]
+        },
+        {
+          "title": "Bad Guys Close In",
+          "synopsis": "The opposition tightens and internal fractures surface.",
+          "scenes": [
+            {"title": "The Squeeze", "synopsis": "Everything starts coming apart at once."}
+          ]
+        },
+        {
+          "title": "All Is Lost",
+          "synopsis": "A false victory collapses; the protagonist loses something vital.",
+          "scenes": [
+            {"title": "The Loss", "synopsis": "The 'whiff of death' moment."}
+          ]
+        },
+        {
+          "title": "Dark Night of the Soul",
+          "synopsis": "The protagonist hits bottom and is forced to see clearly.",
+          "scenes": [
+            {"title": "The Low Point", "synopsis": "Despair yields a hard truth or renewed resolve."}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Act 3 · Resolution",
+      "children": [
+        {
+          "title": "Break into Three",
+          "synopsis": "A new idea or a helping hand sparks the final plan.",
+          "scenes": [
+            {"title": "The Spark", "synopsis": "The protagonist rises with a fresh approach."}
+          ]
+        },
+        {
+          "title": "Finale",
+          "synopsis": "The plan plays out; beats pay off in order; the goal is resolved.",
+          "scenes": [
+            {"title": "The Payoff", "synopsis": "Stakes, theme, and old hurts collide in the climax."}
+          ]
+        },
+        {
+          "title": "Final Image",
+          "synopsis": "A mirror of the opening image, showing the change.",
+          "scenes": [
+            {"title": "After", "synopsis": "A resonant vision of the transformed protagonist."}
+          ]
+        }
+      ]
+    }
+  ]
+}

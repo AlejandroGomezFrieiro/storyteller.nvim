@@ -1,0 +1,88 @@
+{
+  "id": "three-act-structure",
+  "name": "Three-Act Structure",
+  "source": "Kindling three-act",
+  "description": "Classic three-act dramatic structure. Act I sets up the ordinary world and the call to action; Act II confronts escalating obstacles toward the midpoint shift; Act III resolves the climb and closes the arc.",
+  "project_types": ["novel"],
+  "structure": [
+    {
+      "title": "Act 1 · Setup",
+      "children": [
+        {
+          "title": "The Ordinary World",
+          "synopsis": "Establish the protagonist's everyday life, voice, and wants before anything changes.",
+          "scenes": [
+            {"title": "Status Quo", "synopsis": "Show the protagonist's routines, relationships, and quiet longing."}
+          ]
+        },
+        {
+          "title": "Inciting Incident",
+          "synopsis": "A disruption forces a change the protagonist cannot ignore.",
+          "scenes": [
+            {"title": "The Disruption", "synopsis": "An event or message cracks the ordinary world open."}
+          ]
+        },
+        {
+          "title": "The Hooked Choice",
+          "synopsis": "The protagonist weighs the cost and chooses to act on the disruption.",
+          "scenes": [
+            {"title": "Decision", "synopsis": "The protagonist commits, setting the story's central goal in motion."}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Act 2 · Confrontation",
+      "children": [
+        {
+          "title": "Rising Action",
+          "synopsis": "Allies, enemies, and escalating attempts create momentum and deepen stakes.",
+          "scenes": [
+            {"title": "First Attempts", "synopsis": "Early wins and losses sharpen the goal and its true cost."},
+            {"title": "Complications", "synopsis": "A new obstacle forces a change of plan."}
+          ]
+        },
+        {
+          "title": "Midpoint",
+          "synopsis": "A major turn: the protagonist moves from reaction to action and the stakes shift.",
+          "scenes": [
+            {"title": "The Turning Point", "synopsis": "A revelation or decision raises the cost of failure."}
+          ]
+        },
+        {
+          "title": "Darkest Push",
+          "synopsis": "The antagonist tightens their grip; the protagonist teeters on defeat.",
+          "scenes": [
+            {"title": "Pressure Mounts", "synopsis": "Everything the protagonist wants slips toward ruin."}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Act 3 · Resolution",
+      "children": [
+        {
+          "title": "All Is Lost",
+          "synopsis": "The lowest point: hope collapses and the protagonist must find a deeper resolve.",
+          "scenes": [
+            {"title": "The Fall", "synopsis": "A final failure strips away the protagonist's illusions."}
+          ]
+        },
+        {
+          "title": "Climax",
+          "synopsis": "The protagonist faces the central conflict with everything on the line.",
+          "scenes": [
+            {"title": "The Showdown", "synopsis": "The decisive confrontation resolves the story's central question."}
+          ]
+        },
+        {
+          "title": "Resolution",
+          "synopsis": "The new normal, showing how the protagonist and world have changed.",
+          "scenes": [
+            {"title": "Aftermath", "synopsis": "Close the arc and leave a resonant final image."}
+          ]
+        }
+      ]
+    }
+  ]
+}

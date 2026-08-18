@@ -23,6 +23,11 @@ M.setup = function(opts)
 
   -- Register :Story* user commands (Phase 0 defaults + any phase additions).
   require("storyteller.commands.phase0").setup()
+  require("storyteller.commands.phase1").setup()
+  require("storyteller.commands.phase2").setup()
+  require("storyteller.commands.phase3").setup()
+  require("storyteller.commands.phase4").setup()
+  require("storyteller.commands.phase5").setup()
   require("storyteller.command").setup()
 
   -- Autocmds: enter a buffer -> attach project + optional detect-on-save.
@@ -31,10 +36,17 @@ M.setup = function(opts)
   end
 
   -- Optional keymaps/which-key surface inside a project.
-  require("storyteller.keymaps").ensure()
-
-  -- Phase 1+: load outline/status lazily (guarded here so old loaders work).
-  -- (Phase 1 modules register via the same command registry.)
+  local km = require("storyteller.keymaps")
+  km.register("<leader>so", "<cmd>StoryOutline<cr>", "Outline")
+  km.register("<leader>ss", "<cmd>StoryScrivenings<cr>", "Scrivenings")
+  km.register("<leader>sr", "<cmd>StoryReferences<cr>", "References")
+  km.register("<leader>sd", "<cmd>StoryDetectScene<cr>", "Detect refs in scene")
+  km.register("<leader>sb", "<cmd>StoryCorkboard<cr>", "Corkboard")
+  km.register("<leader>st", "<cmd>StoryTargets<cr>", "Targets")
+  km.register("<leader>sn", "<cmd>StorySnapshot<cr>", "Snapshot")
+  km.register("<leader>sx", "<cmd>StoryExport<cr>", "Export")
+  km.register("<leader>sT", "<cmd>StoryTemplate<cr>", "Template")
+  km.ensure()
 
   return M
 end

@@ -1,0 +1,73 @@
+{
+  "id": "seven-point",
+  "name": "Seven-Point Structure",
+  "source": "Kindling seven-point",
+  "description": "Dan Wells' seven-point story structure in three acts, built on the reversal between hook and resolution. Four major turning points (plot turns, pinches, midpoint) steer the arc.",
+  "project_types": ["novel"],
+  "structure": [
+    {
+      "title": "Act 1 · Hook and Turn",
+      "children": [
+        {
+          "title": "Hook",
+          "synopsis": "Grab attention and establish the protagonist's ordinary start.",
+          "scenes": [
+            {"title": "The Opening", "synopsis": "Create intrigue and a reason to read on."}
+          ]
+        },
+        {
+          "title": "Plot Turn 1",
+          "synopsis": "The true adventure begins; the ordinary world is left behind.",
+          "scenes": [
+            {"title": "The Shift", "synopsis": "The story's real direction snaps into place."}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Act 2 · Pressure and Midpoint",
+      "children": [
+        {
+          "title": "Pinch Point 1",
+          "synopsis": "Apply pressure: the antagonist's power or the stakes become visible.",
+          "scenes": [
+            {"title": "The Squeeze", "synopsis": "First proof of what's against the protagonist."}
+          ]
+        },
+        {
+          "title": "Midpoint",
+          "synopsis": "A turn from reaction to action; a quest or mirror moment.",
+          "scenes": [
+            {"title": "The Mirror", "synopsis": "The protagonist commits to the fight, often revealing theme."}
+          ]
+        },
+        {
+          "title": "Pinch Point 2",
+          "synopsis": "Pressure peaks again; defeat feels close and the plan fractures.",
+          "scenes": [
+            {"title": "The Break", "synopsis": "The antagonist shoves the protagonist toward the endgame."}
+          ]
+        },
+        {
+          "title": "Plot Turn 2",
+          "synopsis": "The protagonist takes control and prepares the final push.",
+          "scenes": [
+            {"title": "The Rally", "synopsis": "The protagonist turns the tables and sets the climax."}
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Act 3 · Resolution",
+      "children": [
+        {
+          "title": "Resolution",
+          "synopsis": "The climax pays off and the arc closes, mirroring the hook.",
+          "scenes": [
+            {"title": "The Close", "synopsis": "Resolve the central conflict and land the change."}
+          ]
+        }
+      ]
+    }
+  ]
+}

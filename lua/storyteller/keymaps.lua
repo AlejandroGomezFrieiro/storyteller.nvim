@@ -11,31 +11,19 @@ M.register = function(lhs, rhs, desc)
   keymaps[#keymaps + 1] = { lhs = lhs, rhs = rhs, desc = desc }
 end
 
-local function has(mod)
-  return pcall(require, mod)
-end
-
--- Apply all registered keymaps + which-key groups.
+-- Apply all registered keymaps + which-key group.
 M.apply = function()
   for _, km in ipairs(keymaps) do
     vim.keymap.set("n", km.lhs, km.rhs, { desc = km.desc, silent = true })
   end
-  if has "which-key" then
-    local wk = require "which-key"
-    local groups = {}
+  local ok, wk = pcall(require, "which-key")
+  if ok then
+    wk.add({ { "<leader>s", group = "Writing" } })
+    local mappings = {}
     for _, km in ipairs(keymaps) do
-      local prefix = km.lhs:match("^<leader>(%a)<.*>$") or km.lhs:match("^<leader>(%a)")
-      if prefix and not groups[prefix] then
-        groups[prefix] = { prefix .. " → Writing" }
-      end
+      mappings[km.lhs] = { km.desc }
     end
-    -- register the Writing group once
-    local grouptable = {}
-    for _, km in ipairs(keymaps) do
-      local short = km.lhs:gsub("^<leader>", "<leader>")
-      grouptable[short] = { km.desc }
-    end
-    wk.add(grouptable)
+    wk.add(mappings)
   end
 end
 
