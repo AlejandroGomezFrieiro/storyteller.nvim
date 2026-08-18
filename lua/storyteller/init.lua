@@ -17,6 +17,9 @@ local M = {}
 
 M.setup = function(opts)
   config.setup(opts)
+  if M._initialized then
+    return M
+  end
 
   -- Detect the current project lazily; cache it per directory.
   project.setup()
@@ -48,6 +51,7 @@ M.setup = function(opts)
   km.register("<leader>sT", "<cmd>StoryTemplate<cr>", "Template")
   km.ensure()
 
+  M._initialized = true
   return M
 end
 

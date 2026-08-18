@@ -4,7 +4,7 @@
 -- Supported (the subset the plugin manages):
 --   * scalars/booleans/numbers: `key: value`
 --   * lists:                    `key:` + indented `- item`
---   * comments (`# ...`) at top level: preserved verbatim
+--   * comments and unsupported YAML lines: preserved verbatim on mutation
 --
 -- Contract (frozen for parallel subagents):
 --   metadata.read(path)            -> { meta, has_block } or nil
@@ -115,6 +115,7 @@ local function parse_block(lines)
   return {
     meta = meta,
     body_start = close + 1,
+    close = close,
     ok = true,
   }
 end
@@ -158,6 +159,71 @@ local function encode(meta)
   return lines
 end
 
+local function emit_field(lines, key, value)
+  if value == nil then
+    return
+  end
+  if type(value) == "table" then
+    lines[#lines + 1] = key .. ":"
+    for _, item in ipairs(value) do
+      lines[#lines + 1] = ("  - %s"):format(item)
+    end
+  else
+    lines[#lines + 1] = ("%s: %s"):format(key, tostring(value))
+  end
+end
+
+-- Preserve raw YAML/comments and rewrite only fields changed by the plugin.
+-- This deliberately does not attempt to parse arbitrary YAML; unsupported
+-- constructs survive unchanged instead of being discarded by our small parser.
+local function patch_frontmatter(raw, before, after)
+  local changed = {}
+  for key, value in pairs(after) do
+    if not vim.deep_equal(before[key], value) then
+      changed[key] = true
+    end
+  end
+  for key in pairs(before) do
+    if after[key] == nil then
+      changed[key] = true
+    end
+  end
+  if vim.tbl_isempty(changed) then
+    return raw
+  end
+
+  local lines = { "---" }
+  local i = 2
+  local close = #raw
+  while i < close do
+    local line = raw[i]
+    local key = line:match("^%s*([%w_]+)%s*:")
+    if key and changed[key] then
+      -- Drop the old scalar/list representation. Only list continuation lines
+      -- are consumed; unknown nested-map content is not treated as managed.
+      i = i + 1
+      while i < close and raw[i]:match("^%s*%-%s+") do
+        i = i + 1
+      end
+    else
+      lines[#lines + 1] = line
+      i = i + 1
+    end
+  end
+  for _, key in ipairs(ORDER) do
+    if changed[key] then
+      emit_field(lines, key, after[key])
+    end
+  end
+  for key, value in pairs(after) do
+    if changed[key] and not vim.tbl_contains(ORDER, key) then
+      emit_field(lines, key, value)
+    end
+  end
+  lines[#lines + 1] = "---"
+  return lines
+end
+
 -- --- File ops ---------------------------------------------------------------
 
 local function read_lines(path)
@@ -183,6 +249,8 @@ local function read(path)
   return {
     path = path,
     meta = parsed.meta,
+    original_meta = vim.deepcopy(parsed.meta),
+    frontmatter = vim.list_slice(lines, 1, parsed.close),
     body = vim.list_slice(lines, parsed.body_start),
     had_block = true,
   }
@@ -192,7 +260,13 @@ end
 local function write(doc)
   local new_lines = {}
   if not vim.deep_equal(doc.meta, {}) or doc.had_block then
-    vim.list_extend(new_lines, encode(doc.meta))
+    if doc.frontmatter and doc.original_meta then
+      vim.list_extend(new_lines, patch_frontmatter(doc.frontmatter, doc.original_meta, doc.meta))
+    elseif doc.frontmatter then
+      vim.list_extend(new_lines, doc.frontmatter)
+    else
+      vim.list_extend(new_lines, encode(doc.meta))
+    end
   end
   vim.list_extend(new_lines, doc.body)
   vim.fn.writefile(new_lines, doc.path)

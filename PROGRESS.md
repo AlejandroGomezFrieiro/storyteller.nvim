@@ -194,3 +194,30 @@ Log of implementation work against the plan in `PLAN.md`.
 - Collections: saved filters, no custom UI.
 - Contract frozen in Phase 0 so parallel subagents can build safely:
   `metadata` get/set signature, `project.paths`, `pickers` API, `status` shape.
+
+---
+
+## Post-review hardening
+
+- [x] Explicit `setup(opts)` now merges later user options; plugin loading no
+  longer races configuration with an automatic default setup.
+- [x] `.storyteller` marker roots can bootstrap an empty project and run
+  `:StoryTemplate`.
+- [x] Metadata mutations preserve raw comments and unsupported YAML lines while
+  rewriting only changed Storyteller fields; `:StoryMeta` writes its edited raw
+  frontmatter back verbatim.
+- [x] Scrivenings synchronizes clean open source buffers after write-back and
+  marks a modified stale source buffer read-only before it can overwrite disk.
+- [x] `progress.log` now records `date delta total`, fixing multi-day deltas;
+  legacy two-column rows remain readable but are not used as a total baseline.
+- [x] Manuscript export strips chapter frontmatter; `:StoryExportAll` now
+  exports every chapter rather than duplicating the manuscript command.
+- [x] Fixed reference action selection, corkboard frontmatter POV, saved-scene
+  auto-detection cursor capture, and the unimplemented `minipick` setting.
+- [x] Standalone Nixvim module uses `storyteller.*`, avoiding collision with
+  nixvim_config's `writing.storyteller.*` adapter.
+- [x] Added `tests/storyteller_spec.lua`; current suite: 15 passing checks.
+- [x] Added reproducible Charmbracelet VHS demos in `docs/vhs/` and generated
+  corkboard, Scrivenings, targets, and README promotional GIFs in `docs/assets/`.
+- [x] Template `justfile` now owns only launch, linting, and git-branch helpers;
+  Storyteller is the sole command surface for story-aware views and export.

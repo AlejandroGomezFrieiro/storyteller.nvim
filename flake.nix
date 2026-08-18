@@ -27,8 +27,18 @@
       '';
     });
 
-    # nixvim module (consumed by nixvim_config's `writing` derivation).
-    # Added in Phase 5; kept as a stub so the contract lands early.
+    devShells = forAllSystems (system: let
+      pkgs = nixpkgs.legacyPackages.${system};
+    in {
+      default = pkgs.mkShell {
+        packages = [
+          pkgs.neovim
+          pkgs.vhs
+        ];
+      };
+    });
+
+    # Standalone Nixvim module; nixvim_config supplies its own writing adapter.
     nixvimModules.default = import ./nixvim.nix;
   };
 }

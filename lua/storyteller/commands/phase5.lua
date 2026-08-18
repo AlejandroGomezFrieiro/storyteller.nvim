@@ -61,11 +61,11 @@ local function setup_phase5()
     if not prj then
       return
     end
-    local out = export.export_manuscript(prj, fmt_from_arg(args))
+    local out = export.all(prj, fmt_from_arg(args))
     if out then
-      vim.notify(("[storyteller] Exported project → %s"):format(out), vim.log.levels.INFO)
+      vim.notify(("[storyteller] Exported %d chapter(s). "):format(#out), vim.log.levels.INFO)
     end
-  end, { desc = "Export the whole compiled project", opts = { nargs = "*" } })
+  end, { desc = "Export each chapter", opts = { nargs = "*" } })
 end
 
 M.setup = function()

@@ -1,5 +1,11 @@
 # Writing Config — Roadmap Plan
 
+> **Historical note:** this was the original no-custom-plugin roadmap for the
+> `nixvim_config` writing template. Story-aware features are now implemented in
+> `storyteller.nvim`; the overlapping `just` recipes are intentionally not part
+> of the current template. Use `README.md` and `docs/user-guide.md` for current
+> commands and workflow.
+
 Bring the `writing` Neovim derivation and the `#storytelling` flake template
 closer to Scrivener / yWriter / Kindling parity **without adding custom
 plugins**. Everything here is markdown-native, shell-scriptable, or plain

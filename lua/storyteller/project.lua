@@ -51,7 +51,7 @@ local function find_root_from(start)
   for _, marker in ipairs(config.get().markers) do
     local hit = vim.fs.find(marker, { upward = true, path = start })
     if #hit > 0 then
-      return vim.fs.dirname(hit[1])
+      return vim.fs.dirname(hit[1]), true
     end
   end
 
@@ -63,7 +63,7 @@ local function find_root_from(start)
   local cur = start
   while cur do
     if has_layout(cur) then
-      return cur
+      return cur, false
     end
     if gitroot and cur == gitroot then
       break
@@ -77,15 +77,15 @@ local function find_root_from(start)
 
   -- Fallback: the git root itself (only if it has the layout).
   if gitroot and has_layout(gitroot) then
-    return gitroot
+    return gitroot, false
   end
 
   return nil
 end
 
 -- Absolute path map for a root. Returns nil if not a project.
-local function paths_for(root)
-  if not has_layout(root) then
+local function paths_for(root, explicit)
+  if not explicit and not has_layout(root) then
     return nil
   end
   return {
@@ -112,12 +112,28 @@ M.resolve = function(start)
   if start == "" then
     start = vim.fn.getcwd()
   end
-  local root = find_root_from(start)
-  return paths_for(root)
+  local root, explicit = find_root_from(start)
+  return paths_for(root, explicit)
 end
 
 -- Project for the current buffer, if inside one.
 M.current = function()
+  local bufnr = vim.api.nvim_get_current_buf()
+  -- Derived Storyteller buffers have no filename. Keep their originating
+  -- project context so commands can chain naturally (for example, corkboard
+  -- -> Scrivenings or targets -> export).
+  local corkboard = vim.b[bufnr].storyteller_corkboard
+  if corkboard and corkboard.prj then
+    return corkboard.prj
+  end
+  local scrivenings = vim.b[bufnr].storyteller_scrivenings
+  if scrivenings and scrivenings.prj then
+    return scrivenings.prj
+  end
+  local attached = vim.b[bufnr].storyteller_project
+  if attached then
+    return attached
+  end
   local file = vim.fn.expand("%:p")
   local candidate = file ~= "" and file or vim.fn.getcwd()
   return M.resolve(candidate)

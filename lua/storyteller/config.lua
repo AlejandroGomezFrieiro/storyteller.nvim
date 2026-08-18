@@ -13,7 +13,7 @@ local DEFAULTS = {
   -- Detection: auto-run reference detection on save for the current scene.
   detect_on_save = true,
   detect_debounce = 300, -- ms
-  -- Picker backend: "telescope" | "fzf" | "minipick" | "auto".
+  -- Picker backend: "telescope" | "fzf" | "auto".
   picker = "auto",
   -- Per-text-width column for prose (used for a status hint).
   target_icon = "🎯",
@@ -44,10 +44,7 @@ end
 
 M.setup = function(opts)
   opts = opts or {}
-  if M.user then
-    return M.user
-  end
-  M.user = vim.tbl_deep_extend("force", M.defaults(), opts)
+  M.user = vim.tbl_deep_extend("force", M.user or M.defaults(), opts)
   return M.user
 end
 

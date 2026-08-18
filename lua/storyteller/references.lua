@@ -14,26 +14,21 @@ local pickers = require("storyteller.pickers")
 local M = {}
 
 -- Ask the user which action to take for a single suggestion.
-local function ask_action(scene, sug)
-  local ok, input = pcall(function()
-    return vim.ui.input({
-      prompt = ("[%d%%] %s (%s):  [l]ink  [d]ismiss  [a]ll  [n]ope: ")
-        :format(math.floor(sug.confidence * 100 + 0.5), sug.name, sug.type),
-      default = "l",
-    })
+local function ask_action(scene, sug, prj)
+  vim.ui.select({ "link", "dismiss", "link all" }, {
+    prompt = ("[%d%%] %s (%s)"):format(math.floor(sug.confidence * 100 + 0.5), sug.name, sug.type),
+  }, function(choice)
+    if choice == "link" then
+      detect.link(scene.path, sug.reference)
+      vim.notify(("[storyteller] Linked %s (%s)."):format(sug.name, sug.type), vim.log.levels.INFO)
+    elseif choice == "dismiss" then
+      detect.dismiss(scene.path, sug.reference.name)
+      vim.notify(("[storyteller] Dismissed %s."):format(sug.reference.name), vim.log.levels.INFO)
+    elseif choice == "link all" then
+      local n = detect.link_all(scene, prj)
+      vim.notify(("[storyteller] Auto-linked %s confident reference(s)."):format(n), vim.log.levels.INFO)
+    end
   end)
-  local choice = ok and tostring(input and input.value or input) or ""
-  choice = (choice or ""):lower()
-  if choice == "" or choice:find("l", 1, true) then
-    detect.link(scene.path, sug.reference)
-    vim.notify(("[storyteller] Linked %s (%s)."):format(sug.name, sug.type), vim.log.levels.INFO)
-  elseif choice:find("d", 1, true) then
-    detect.dismiss(scene.path, sug.reference.name)
-    vim.notify(("[storyteller] Dismissed %s."):format(sug.reference.name), vim.log.levels.INFO)
-  elseif choice:find("a", 1, true) then
-    local n = detect.link_all(scene, prj)
-    vim.notify(("[storyteller] Auto-linked %s confident reference(s)."):format(n), vim.log.levels.INFO)
-  end
 end
 
 -- Present detections for the current scene via the picker.
@@ -59,7 +54,7 @@ M.suggest = function(sc, prj)
     prompt_title = "Storyteller detection",
     on_select = function(value, _action)
       if value and value.scene then
-        ask_action(value.scene, value.sug)
+        ask_action(value.scene, value.sug, prj)
       end
     end,
   })

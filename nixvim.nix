@@ -1,17 +1,14 @@
 # Storyteller — nixvim module.
 #
-# Consumed by nixvim_config's `writing` derivation (Phase 5 wires the full
-# feature set). This module establishes the `writing.storyteller` option
-# namespace, adds the plugin package to the runtimepath so `:Story*` works,
-# and optionally wires the consumers the plugin integrates with.
+# Standalone Nixvim module. It uses a neutral `storyteller.*` namespace so it
+# can coexist with nixvim_config's separate `writing.storyteller.*` adapter.
+# It adds the plugin package to the runtimepath and wires optional consumers.
 #
-# Options (all under `writing.storyteller`):
+# Options (all under `storyteller`):
 #   enable       – enable the plugin itself (default true).
 #   settings     – table passed to storyteller.setup({...}) (default {}).
 #   export.enable – add pandoc to extraPackages for export commands
 #                  (:StoryExport / :StoryExportAll). Default true.
-#   lualine.enable – enable lualine so the plugin's live word-count status
-#                  component can be picked up. Default true.
 #   picker.enable  – enable telescope, the plugin's preferred picker backend.
 #                  Default true.
 #
@@ -30,9 +27,9 @@
     cp -r ${./doc} $out/doc
     cp -r ${./templates} $out/templates
   '';
-  cfg = config.writing.storyteller;
+  cfg = config.storyteller;
 in {
-  options.writing.storyteller = {
+  options.storyteller = {
     enable = lib.mkEnableOption "storyteller novel-writing plugin" // {
       default = true;
     };
@@ -45,9 +42,6 @@ in {
       lib.mkEnableOption "pandoc via :StoryExport / :StoryExportAll" // {
         default = true;
       };
-    lualine.enable = lib.mkEnableOption "lualine status component (word/target)" // {
-      default = true;
-    };
     picker.enable = lib.mkEnableOption "telescope picker backend" // {
       default = true;
     };
@@ -60,26 +54,14 @@ in {
     # Pandoc powers manuscript export; only pulled in when export is on.
     extraPackages = lib.mkDefault (lib.optional cfg.export.enable pkgs.pandoc);
 
-    # Surface the plugin's word-count/target status to the statusline and let
-    # the plugin's pickers use telescope when its backend is enabled.
-    plugins.lualine.enable = lib.mkDefault cfg.lualine.enable;
+    # Let the plugin's pickers use Telescope when its backend is enabled.
     plugins.telescope.enable = lib.mkDefault cfg.picker.enable;
 
     extraConfigLua = lib.mkDefault ''
       -- Phase 5 registers Templates + Export into :Story* before the central
       -- registry materializes user commands during storyteller.setup().
       require("storyteller.commands.phase5").setup()
-      require("storyteller").setup(${builtins.toJSON config.writing.storyteller.settings})
-    ''
-    + lib.optionalString (cfg.lualine.enable && cfg.picker.enable) ''
-      -- Once lualine is up, patch in storyteller's status component so the
-      -- live word/target readout shows next to the existing sections.
-      vim.schedule(function()
-        local ok = pcall(require, "lualine")
-        if ok then
-          require("storyteller.lualine").patch()
-        end
-      end)
+      require("storyteller").setup(${builtins.toJSON config.storyteller.settings})
     '';
   };
 }

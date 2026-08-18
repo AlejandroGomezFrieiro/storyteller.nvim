@@ -45,6 +45,9 @@ M.setup = function()
         end
         -- Debounced auto-detect for the scene just saved: auto-link confident
         -- matches (confidence >= 0.9), the conservative Kindling-style default.
+        -- Capture this write's location before the debounce timer runs. The
+        -- user may move to a different scene or buffer before it fires.
+        local line = vim.api.nvim_win_get_cursor(0)[1]
         if timers[ev.buf] then
           vim.fn.timer_stop(timers[ev.buf])
         end
@@ -54,7 +57,6 @@ M.setup = function()
             local index = require("storyteller.index")
             local prj = vim.b[ev.buf].storyteller_project
             local file = vim.api.nvim_buf_get_name(ev.buf)
-            local line = vim.api.nvim_win_get_cursor(0)[1]
             for _, sc in ipairs(index.scenes(prj)) do
               if sc.path == file and sc.start_line <= line and line <= (sc.end_line or math.huge) then
                 local n = detect.link_all(sc, prj)

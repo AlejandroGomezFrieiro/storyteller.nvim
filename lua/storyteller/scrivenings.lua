@@ -75,6 +75,31 @@ local function find_line(lines, hdr, from)
   return nil
 end
 
+-- Keep any clean, already-loaded source buffers aligned with the file written
+-- through Scrivenings. A modified source buffer is intentionally left alone:
+-- replacing it would destroy unsaved work, so surface a conflict instead.
+local function sync_source_buffers(path, lines)
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_get_name(bufnr) == path then
+      if vim.bo[bufnr].modified then
+        -- Preserve the unsaved buffer, but prevent a later accidental `:w`
+        -- from overwriting the text just written through Scrivenings.
+        vim.bo[bufnr].readonly = true
+        vim.b[bufnr].storyteller_scrivenings_conflict = true
+        vim.notify(
+          ("[storyteller] Scrivenings wrote %s; its modified buffer is now read-only. Reload or resolve before writing.")
+            :format(vim.fn.fnamemodify(path, ":t")),
+          vim.log.levels.WARN
+        )
+      else
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+        vim.bo[bufnr].modified = false
+        vim.b[bufnr].storyteller_scrivenings_conflict = nil
+      end
+    end
+  end
+end
+
 -- Re-sync each chunk's slice against the *current* buffer (edits shift line
 -- numbers, so boundaries are recomputed off the chapter separators on every
 -- save), then write back any slice whose lines differ from the snapshot
@@ -122,6 +147,7 @@ local function writeback(buf)
       end
       if not vim.deep_equal(slice, chunk.snapshot) then
         vim.fn.writefile(slice, chunk.chapter_path)
+        sync_source_buffers(chunk.chapter_path, slice)
         written[#written + 1] = chunk.chapter_path
       end
       chunk.snapshot = slice

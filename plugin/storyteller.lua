@@ -1,6 +1,5 @@
 -- Storyteller — runtimepath entry.
--- <plugin readme note: this file is sourced on plugin load; work is deferred
---  to `require("storyteller").setup()`.>
-vim.schedule(function()
-  require("storyteller").setup()
-end)
+--
+-- Deliberately do not call setup() here. A plugin manager or Nixvim config
+-- must call `require("storyteller").setup({...})` so user options are never
+-- raced or silently replaced by automatic defaults.

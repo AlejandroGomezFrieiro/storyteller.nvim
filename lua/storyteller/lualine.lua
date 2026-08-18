@@ -37,15 +37,14 @@ M.apply_to = function(sections)
   return sections
 end
 
--- If lualine is already loaded and has a stored config, patch its sections
--- with our component (idempotent). Users with a static config should use the
--- nixvim module's `sections` wiring instead.
+-- Lualine does not expose a stable public API for merging an already-applied
+-- configuration, so callers should use `component()` or `apply_to()` before
+-- calling lualine.setup(). Kept as a capability probe for compatibility.
 M.patch = function()
   local ok, lualine = pcall(require, "lualine")
   if not ok then
     return false
   end
-  -- Only when lazy -- we don't auto-setup; the nixvim module wires sections.
   return true
 end
 

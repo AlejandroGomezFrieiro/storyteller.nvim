@@ -37,6 +37,12 @@ words/dictionary.txt       project vocabulary
 For detailed workflow guidance, read the
 [user guide](docs/user-guide.md).
 
+![Storyteller corkboard followed by a Scrivenings manuscript view](docs/assets/storyteller.gif)
+
+*A Markdown project viewed first as a corkboard, then as one editable
+Scrivenings buffer. The recording is generated from
+[`docs/vhs/storyteller.tape`](docs/vhs/storyteller.tape).*
+
 ## What Storyteller Adds
 
 - Chapter outline with live word counts and targets.
@@ -113,6 +119,7 @@ Use `:StoryMeta` to edit this frontmatter in a scratch buffer.
 | `:StorySnapshots` | List snapshots. |
 | `:StoryTemplate` | Scaffold a bundled story structure. |
 | `:StoryExport [docx\|epub\|pdf\|smf]` | Export the compiled manuscript through Pandoc. |
+| `:StoryExportAll [docx\|epub\|pdf\|smf]` | Export each chapter through Pandoc. |
 
 The nixvim writing integration assigns the common commands to `<leader>s`:
 
@@ -172,8 +179,26 @@ writing.storyteller = {
 };
 ```
 
+The standalone `storytelling.nvim` Nixvim module uses the independent
+`storyteller.*` namespace instead, so it can be imported alongside the
+`nixvim_config` writing module without redeclaring `writing.storyteller.*`.
+
 See [the user guide](docs/user-guide.md) for the writing workflow and
 [`PLAN.md`](PLAN.md) for the technical roadmap.
+
+## Development Checks
+
+Run the dependency-free regression suite with a recent Neovim:
+
+```bash
+nvim --headless -u NONE -l tests/storyteller_spec.lua
+```
+
+It covers marker-only project discovery, explicit setup precedence, safe
+frontmatter mutation, multi-day progress accounting, Scrivenings source-buffer
+synchronization, and frontmatter-free export composition.
+
+VHS demos are reproducible from [`docs/vhs/`](docs/vhs/README.md).
 
 ## Inspirations And Attribution
 

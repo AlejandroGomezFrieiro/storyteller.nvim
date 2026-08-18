@@ -7,6 +7,7 @@
 local config = require("storyteller.config")
 local project = require("storyteller.project")
 local index = require("storyteller.index")
+local metadata = require("storyteller.metadata")
 
 local M = {}
 
@@ -143,7 +144,10 @@ M.export_manuscript = function(prj, fmt)
   local ms = join(prj.build, "manuscript.md")
   local out_lines = {}
   for _, ch in ipairs(index.chapters(prj)) do
-    vim.list_extend(out_lines, vim.fn.readfile(ch.path))
+    -- Frontmatter drives Storyteller; it is not manuscript prose and would
+    -- become visible Markdown after the first concatenated chapter.
+    local doc = metadata.read(ch.path)
+    vim.list_extend(out_lines, doc and doc.body or vim.fn.readfile(ch.path))
     table.insert(out_lines, "")
     table.insert(out_lines, "")
   end
@@ -166,6 +170,22 @@ M.export_manuscript = function(prj, fmt)
   if not ok then
     vim.notify(("[storyteller] pandoc failed."):format(), vim.log.levels.ERROR)
     return nil
+  end
+  return out
+end
+
+-- Export every chapter as an individual file. Returns successful output paths.
+M.all = function(prj, fmt)
+  prj = require_prj(prj)
+  if not prj then
+    return nil
+  end
+  local out = {}
+  for _, ch in ipairs(index.chapters(prj)) do
+    local path = M.file(prj, ch.path, fmt)
+    if path then
+      table.insert(out, path)
+    end
   end
   return out
 end

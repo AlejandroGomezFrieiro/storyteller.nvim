@@ -23,9 +23,6 @@ M.backend = function()
   if cfg == "fzf" and has "fzf-lua" then
     return "fzf"
   end
-  if cfg == "minipick" then
-    return "minipick"
-  end
   -- auto
   if cfg == "auto" then
     if has "telescope.builtin" then

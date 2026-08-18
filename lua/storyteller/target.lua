@@ -77,9 +77,9 @@ end
 
 -- --- Daily progress log -----------------------------------------------------
 
--- progress.log lines: `YYYY-MM-DD <words>` where <words> is that day's delta.
--- Idempotent per day: if today's line exists it is replaced with a recomputed
--- value (current total minus the previous day's total); else appended.
+-- progress.log lines: `YYYY-MM-DD <delta> <total>`. The cumulative total
+-- makes later daily deltas correct even after multiple days of writing.
+-- Older two-column rows are retained but cannot supply a reliable baseline.
 M.progress_append = function(prj)
   prj = prj or project.current()
   if not prj then
@@ -94,10 +94,11 @@ M.progress_append = function(prj)
   local today = os.date("%Y-%m-%d")
   local current = M.total_words(prj)
 
-  -- Find the previous day's total (last non-today line) to compute today's delta.
+  -- Find the previous day's cumulative total. Old two-column rows are deltas,
+  -- not totals, so intentionally do not treat them as a baseline.
   local prev_total = 0
   for _, ln in ipairs(lines) do
-    local date, total = ln:match("^(%d%d%d%d%-%d%d%-%d%d)%s+(%d+)")
+    local date, _, total = ln:match("^(%d%d%d%d%-%d%d%-%d%d)%s+(%d+)%s+(%d+)")
     if date and date ~= today then
       prev_total = tonumber(total) or prev_total
     end
@@ -109,14 +110,14 @@ M.progress_append = function(prj)
   for _, ln in ipairs(lines) do
     local date = ln:match("^(%d%d%d%d%-%d%d%-%d%d)%s")
     if date == today then
-      table.insert(out, ("%s %d"):format(today, delta))
+      table.insert(out, ("%s %d %d"):format(today, delta, current))
       updated = true
     else
       table.insert(out, ln)
     end
   end
   if not updated then
-    table.insert(out, ("%s %d"):format(today, delta))
+    table.insert(out, ("%s %d %d"):format(today, delta, current))
   end
   vim.fn.writefile(out, logfile)
   vim.notify(

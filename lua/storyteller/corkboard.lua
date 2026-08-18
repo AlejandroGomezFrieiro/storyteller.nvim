@@ -18,6 +18,7 @@ local index = require("storyteller.index")
 local metadata = require("storyteller.metadata")
 
 local M = {}
+local NS = vim.api.nvim_create_namespace("StorytellerCorkboard")
 
 local STATUS_ORDER = { "outline", "draft", "revision", "done" }
 local NEXT_STATUS = {
@@ -26,6 +27,28 @@ local NEXT_STATUS = {
   revision = "done",
   done = "outline",
 }
+
+local STATUS_HL = {
+  outline = "StorytellerCorkboardOutline",
+  draft = "StorytellerCorkboardDraft",
+  revision = "StorytellerCorkboardRevision",
+  done = "StorytellerCorkboardDone",
+  unused = "StorytellerCorkboardUnused",
+}
+
+local function ensure_highlights()
+  local set = vim.api.nvim_set_hl
+  set(0, "StorytellerCorkboardHeader", { link = "Title", default = true })
+  set(0, "StorytellerCorkboardHelp", { link = "Comment", default = true })
+  set(0, "StorytellerCorkboardChapter", { link = "Special", default = true })
+  set(0, "StorytellerCorkboardScene", { link = "Identifier", default = true })
+  set(0, "StorytellerCorkboardWords", { link = "Number", default = true })
+  set(0, "StorytellerCorkboardOutline", { link = "Comment", default = true })
+  set(0, "StorytellerCorkboardDraft", { link = "String", default = true })
+  set(0, "StorytellerCorkboardRevision", { link = "WarningMsg", default = true })
+  set(0, "StorytellerCorkboardDone", { link = "DiagnosticOk", default = true })
+  set(0, "StorytellerCorkboardUnused", { link = "DiagnosticError", default = true })
+end
 
 local function trim(s)
   return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
@@ -45,7 +68,8 @@ local function scene_status(sc)
 end
 
 local function scene_pov(sc)
-  return clean(sc.meta and sc.meta.pov)
+  local m = metadata.read(sc.path)
+  return clean(m and m.meta and m.meta.pov) or clean(sc.meta and sc.meta.pov)
 end
 
 local function scene_location(sc)
@@ -88,6 +112,8 @@ M.refresh = function(bufnr)
   end
 
   vim.bo[bufnr].modifiable = true
+  ensure_highlights()
+  vim.api.nvim_buf_clear_namespace(bufnr, NS, 0, -1)
   cb.rows = build_rows(cb.prj, cb.filter)
   cb.line_to = {}
 
@@ -110,6 +136,28 @@ M.refresh = function(bufnr)
   end
 
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+  vim.api.nvim_buf_add_highlight(bufnr, NS, "StorytellerCorkboardHeader", 0, 0, -1)
+  vim.api.nvim_buf_add_highlight(bufnr, NS, "StorytellerCorkboardHelp", 1, 0, -1)
+  for line, row in pairs(cb.line_to) do
+    local index = line - 1
+    local status = row.status ~= "" and row.status or "outline"
+    local status_end = #status + 2 -- [status]
+    vim.api.nvim_buf_add_highlight(bufnr, NS, STATUS_HL[status] or "StorytellerCorkboardOutline", index, 0, status_end)
+    local scene_start = status_end + 1
+    local scene_end = lines[line]:find(" — ", scene_start, true)
+    if scene_end then
+      vim.api.nvim_buf_add_highlight(bufnr, NS, "StorytellerCorkboardScene", index, scene_start, scene_end - 1)
+    end
+    local words_start = lines[line]:find("%d+ words")
+    if words_start then
+      vim.api.nvim_buf_add_highlight(bufnr, NS, "StorytellerCorkboardWords", index, words_start - 1, -1)
+    end
+  end
+  for line, text in ipairs(lines) do
+    if text:match("^### ") then
+      vim.api.nvim_buf_add_highlight(bufnr, NS, "StorytellerCorkboardChapter", line - 1, 0, -1)
+    end
+  end
   vim.bo[bufnr].modifiable = false
   -- nvim buf var access returns a copy; write the mutated state back.
   vim.b[bufnr].storyteller_corkboard = cb
@@ -219,6 +267,11 @@ M.open = function(prj, filter)
     line_to = {},
   }
   vim.api.nvim_set_current_buf(bufnr)
+  vim.wo.number = false
+  vim.wo.relativenumber = false
+  vim.wo.signcolumn = "no"
+  vim.wo.wrap = false
+  vim.wo.cursorline = true
   M.refresh(bufnr)
   setup_keys(bufnr)
   return bufnr

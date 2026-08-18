@@ -40,6 +40,7 @@ local function save_meta(buf)
   metadata.write({
     path = st.path,
     meta = parsed.meta,
+    frontmatter = lines,
     body = st.body,
     had_block = true,
   })
@@ -62,7 +63,7 @@ local function open_meta()
   end
   local buf = vim.api.nvim_create_buf(false, false)
   vim.api.nvim_buf_set_name(buf, "storyteller://meta/" .. vim.fn.fnamemodify(path, ":t"))
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, metadata.encode(doc.meta))
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, doc.frontmatter or metadata.encode(doc.meta))
   vim.bo[buf].buftype = "acwrite"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
