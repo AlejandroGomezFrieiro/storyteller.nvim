@@ -180,8 +180,9 @@ Log of implementation work against the plan in `PLAN.md`.
   comparing output string); `parse_chapter` scans for H1 past frontmatter and
   trims titles; `parse_reference` handles H2 cards.
 - [x] `nix build` succeeds; `nixvim.nix` parses.
-- [ ] Pending: upstream README/docs polish; optional `reference.docx` (SMF)
-  asset; `texlive` gating for `pdf` export behind a flag.
+- [x] Human-first user guide: `docs/user-guide.md` (linked from README).
+- [ ] Pending: SMF `reference.docx` asset; `texlive` gating for `pdf` export
+  behind a flag.
 
 ---
 

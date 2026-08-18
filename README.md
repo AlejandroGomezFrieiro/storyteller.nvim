@@ -5,6 +5,10 @@ Planned as a layered implementation (`PLAN.md`); current status in `PROGRESS.md`
 Pure Lua for Neovim 0.12, no hard dependencies (pandoc and telescope are
 optional and detected at runtime).
 
+**Start here:** read the human-first user guide at
+[`docs/user-guide.md`](./docs/user-guide.md) — it explains how the plugin is
+*meant* to be used, not just what it can do.
+
 Shipped as a nixvim module (`nixvim.nix`) and as a [`flake.nix`](./flake.nix)
 package; consumed by `nixvim_config`'s `writing` derivation under the
 `writing.storyteller.*` option namespace.
