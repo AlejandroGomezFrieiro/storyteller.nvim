@@ -18,12 +18,14 @@ M.apply = function()
   end
   local ok, wk = pcall(require, "which-key")
   if ok then
-    wk.add({ { "<leader>s", group = "Writing" } })
-    local mappings = {}
+    -- which-key v3 expects a list of mapping specs, not a dictionary keyed by
+    -- lhs. The maps themselves are defined above; these entries only provide
+    -- group/description metadata for the popup.
+    local spec = { { "<leader>s", group = "Writing" } }
     for _, km in ipairs(keymaps) do
-      mappings[km.lhs] = { km.desc }
+      table.insert(spec, { km.lhs, desc = km.desc })
     end
-    wk.add(mappings)
+    wk.add(spec)
   end
 end
 

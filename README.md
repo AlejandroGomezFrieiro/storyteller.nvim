@@ -174,3 +174,26 @@ writing.storyteller = {
 
 See [the user guide](docs/user-guide.md) for the writing workflow and
 [`PLAN.md`](PLAN.md) for the technical roadmap.
+
+## Inspirations And Attribution
+
+Storyteller is an independent, Markdown-first Neovim plugin. It is not
+affiliated with, endorsed by, or a replacement for the projects below.
+
+- [Scrivener](https://www.literatureandlatte.com/scrivener/features) inspired
+  the binder, outliner, corkboard, targets, snapshots, compilation, and
+  Scrivenings-style whole-manuscript editing goals.
+- [Kindling](https://kindlingwriter.com/features) inspired the rolling outline,
+  reference-aware drafting, discovery-oriented planning, and the conservative
+  non-AI reference-detection model. Its open-source implementation was useful
+  research for the name-indexing and phrase-matching approach.
+- [yWriter](https://www.spacejock.com/yWriter.html) reinforced the value of a
+  chapter/scene/reference workflow for novelists.
+- [obsidian.nvim](https://github.com/obsidian-nvim/obsidian.nvim),
+  [markdown-oxide](https://github.com/Feel-ix-343/markdown-oxide), and
+  [Neorg](https://github.com/nvim-neorg/neorg) informed the workspace,
+  Markdown-linking, picker-integration, and modular-Neovim design.
+
+Storyteller stores its own data model in plain Markdown and YAML frontmatter;
+it does not import, copy, or depend on those applications' proprietary project
+formats.
