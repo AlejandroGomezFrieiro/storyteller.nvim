@@ -216,7 +216,7 @@ Log of implementation work against the plan in `PLAN.md`.
   auto-detection cursor capture, and the unimplemented `minipick` setting.
 - [x] Standalone Nixvim module uses `storyteller.*`, avoiding collision with
   nixvim_config's `writing.storyteller.*` adapter.
-- [x] Added `tests/storyteller_spec.lua`; current suite: 15 passing checks.
+- [x] Added `tests/storyteller_spec.lua`; current suite: 24 passing checks.
 - [x] Added reproducible Charmbracelet VHS demos in `docs/vhs/` and generated
   corkboard, Scrivenings, targets, and README promotional GIFs in `docs/assets/`.
 - [x] Template `justfile` now owns only launch, linting, and git-branch helpers;

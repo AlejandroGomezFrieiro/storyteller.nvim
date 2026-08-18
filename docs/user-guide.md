@@ -69,7 +69,26 @@ tags:
 Storyteller currently stores frontmatter per **chapter file**. This means a
 chapter's `status`, `planning`, target, tags, and automatic reference links are
 shared by every scene in that chapter. Keep scene-specific POV/location/beat
-information in the scene body until a per-scene metadata format is introduced.
+information in the scene body, or add a scene-local YAML block directly after
+the heading:
+
+````markdown
+## Scene 2 — The council refuses
+
+```yaml
+storyteller: scene
+status: revision
+pov: Penelope
+location: Council hall
+time: Day 3, night
+goal: Convince the council to leave
+conflict: The storm closes the harbor
+outcome: The council refuses
+```
+````
+
+The `storyteller: scene` sentinel makes the block unambiguous. Storyteller adds
+a stable scene ID only when a persistent feature needs one.
 
 ## Move Between Scales
 
@@ -119,6 +138,49 @@ The default writing keymaps put these under `<leader>s`:
 | `<leader>sn` | `:StorySnapshot` |
 | `<leader>sx` | `:StoryExport` |
 | `<leader>sT` | `:StoryTemplate` |
+| `<leader>sp` | `:StoryScenePick` |
+| `<leader>sc` | `:StoryContinuity` |
+| `<leader>sv` | `:StoryRevision` |
+| `<leader>sC` | `:StoryContext` |
+| `<leader>si` | `:StoryIdea` |
+| `<leader>sl` | `:StoryResume` |
+
+### Continuity and revision
+
+`:StoryContinuity` presents a compact scene matrix. Scene-local YAML makes its
+POV, location, time, and status columns useful; filters remain plain command
+arguments:
+
+```text
+:StoryContinuity pov=Odysseus
+:StoryContinuity location=Ithaca status=revision
+:StoryContinuity missing=time
+```
+
+`:StoryRevision` gathers scenes marked `status: revision`, scenes with open
+Markdown tasks, and Git-changed chapter files. Pass a Git ref to compare
+against it when one is available:
+
+```text
+:StoryRevision main
+```
+
+Both are navigation views: `<CR>` opens the real Markdown scene, `R` refreshes,
+and `q` closes. They do not stage, commit, or replace Git's diff workflow.
+
+### Context and discovery
+
+`:StoryContext` opens an optional split beside the current scene with its
+status, POV, location, beat, goal, conflict, and outcome. Close it with `q`
+
+Use `:StoryIdea` to capture a portable Markdown discovery task:
+
+```markdown
+- [ ] IDEA: The storm was arranged by the council.
+```
+
+`:StoryDiscoveries` gathers these ideas. Press `p` on one to copy it into the
+scene YAML `beat` field and tick the original task. `:StoryResume` returns to
 
 ### Corkboard
 

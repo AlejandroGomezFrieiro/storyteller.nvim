@@ -14,6 +14,7 @@
 local project = require("storyteller.project")
 local index = require("storyteller.index")
 local metadata = require("storyteller.metadata")
+local scene_data = require("storyteller.scene")
 local pickers = require("storyteller.pickers")
 local config = require("storyteller.config")
 local command = require("storyteller.command")
@@ -39,6 +40,10 @@ end
 
 -- Field value for a predicate: frontmatter dominates, inline - **Key:** next.
 local function scene_field(sc, key)
+  local local_meta = scene_data.from_index(sc).meta
+  if local_meta[key] ~= nil then
+    return local_meta[key]
+  end
   local d = doc(sc.path)
   if d and d.meta[key] ~= nil then
     return d.meta[key]

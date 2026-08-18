@@ -7,6 +7,9 @@
 -- the statusline's frequent ticks.
 
 local M = {}
+local project = require("storyteller.project")
+local scene_data = require("storyteller.scene")
+local index = require("storyteller.index")
 
 local function parse_target(lines)
   -- 1. frontmatter `target: 5000`
@@ -38,9 +41,20 @@ M.context = function(bufnr)
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   local target = parse_target(lines)
 
+  local active_scene
+  if bufnr == vim.api.nvim_get_current_buf() then
+    local prj = project.current()
+    if prj then
+      active_scene = scene_data.current(prj)
+      if active_scene then
+        target = scene_data.from_index(active_scene).meta.target or target
+      end
+    end
+  end
+
   -- current scene = word count from the nearest preceding `## ` heading
   local cursor = vim.api.nvim_win_get_cursor(0)[1] -- 1-based
-  local scene_words = 0
+  local scene_words = active_scene and index.scene_words(active_scene) or 0
   local start_line = nil
   local end_line = nil
   for i = 1, #lines do
@@ -55,7 +69,7 @@ M.context = function(bufnr)
       start_line = i
     end
   end
-  if start_line then
+  if not active_scene and start_line then
     end_line = end_line or #lines
     local body = table.concat(vim.list_slice(lines, start_line, end_line), " ")
     for _ in body:gmatch("%S+") do

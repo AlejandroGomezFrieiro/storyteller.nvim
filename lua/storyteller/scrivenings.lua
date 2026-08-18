@@ -179,6 +179,13 @@ M.open = function(prj, opts)
   end
 
   if existing and vim.api.nvim_buf_is_valid(existing) then
+    if vim.bo[existing].modified and opts.bang then
+      local answer = vim.fn.confirm("Discard unsaved Scrivenings edits and rebuild?", "&Discard\n&Cancel", 2)
+      if answer ~= 1 then
+        vim.api.nvim_set_current_buf(existing)
+        return existing
+      end
+    end
     vim.api.nvim_buf_delete(existing, { force = true })
     open_buffers[prj.root] = nil
   end

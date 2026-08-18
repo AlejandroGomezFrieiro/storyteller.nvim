@@ -32,6 +32,8 @@ local target = require("storyteller.target")
 local scrivenings = require("storyteller.scrivenings")
 local export = require("storyteller.export")
 local corkboard = require("storyteller.corkboard")
+local index = require("storyteller.index")
+local scene_data = require("storyteller.scene")
 
 -- An explicit marker must be enough to bootstrap the standard layout.
 local marker_project = project.resolve(tmp .. "/idea.md")
@@ -43,6 +45,7 @@ config.setup({ picker = "fzf" })
 assert_true(config.get().picker == "fzf", "later config setup overrides defaults")
 
 local chapter = tmp .. "/chapters/01.md"
+local prj = project.paths_for(tmp, true)
 vim.fn.writefile({
   "---",
   "# editorial comment",
@@ -62,6 +65,16 @@ assert_true(after_metadata:find("# editorial comment", 1, true) ~= nil, "metadat
 assert_true(after_metadata:find("nested: keep%-me") ~= nil, "metadata mutation preserves unsupported YAML")
 assert_true(after_metadata:find("status: done", 1, true) ~= nil, "metadata mutation updates managed field")
 
+vim.fn.writefile({
+  "# Chapter 1", "## Scene 1", "```yaml", "storyteller: scene",
+  "status: revision", "pov: Odysseus", "tags:", "  - act-1", "```",
+  "ten words belong to prose and not metadata here today",
+}, chapter)
+local parsed_scene = index.scenes(prj)[1]
+assert_true(parsed_scene.meta.status == "revision" and parsed_scene.meta.pov == "Odysseus", "scene YAML metadata is indexed")
+assert_true(index.scene_words(parsed_scene) == 10, "scene word count excludes YAML block")
+assert_true(scene_data.ensure_id(parsed_scene) ~= nil, "scene receives stable ID when needed")
+
 -- The progress format stores a cumulative total so day three is a real delta.
 local original_date = os.date
 local dates = { "2026-01-01", "2026-01-02", "2026-01-03" }
@@ -72,7 +85,6 @@ os.date = function(format)
   end
   return original_date(format)
 end
-local prj = project.paths_for(tmp, true)
 vim.fn.writefile({ "# Chapter 1", words(10) }, chapter)
 target.progress_append(prj)
 vim.fn.writefile({ "# Chapter 1", words(20) }, chapter)
@@ -83,9 +95,9 @@ day = 3
 target.progress_append(prj)
 os.date = original_date
 local progress = vim.fn.readfile(tmp .. "/progress.log")
-assert_true(progress[1] == "2026-01-01 13 13", "progress records first total")
-assert_true(progress[2] == "2026-01-02 10 23", "progress records second-day delta")
-assert_true(progress[3] == "2026-01-03 5 28", "progress records third-day delta")
+assert_true(progress[1] == "2026-01-01 10 10", "progress records first total")
+assert_true(progress[2] == "2026-01-02 10 20", "progress records second-day delta")
+assert_true(progress[3] == "2026-01-03 5 25", "progress records third-day delta")
 
 -- Scrivenings must synchronize a clean source buffer after write-back.
 vim.cmd("edit " .. vim.fn.fnameescape(chapter))
@@ -146,6 +158,11 @@ assert_true(compiled:find("status: draft", 1, true) == nil, "export excludes cha
 local chapter_outputs = export.all(prj, "epub")
 vim.env.PATH = old_path
 assert_true(chapter_outputs and #chapter_outputs == 1, "export all creates one output per chapter")
+
+require("storyteller").setup({ autocmds = false })
+for _, name in ipairs({ "StoryScenePick", "StoryContinuity", "StoryRevision", "StoryContext", "StoryIdea", "StoryResume" }) do
+  assert_true(vim.fn.exists(":" .. name) == 2, name .. " command is registered")
+end
 
 vim.fn.delete(tmp, "rf")
 print(("RESULT: %d passed, %d failed"):format(passed, failed))

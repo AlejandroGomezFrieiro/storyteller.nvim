@@ -9,6 +9,7 @@
 
 local project = require("storyteller.project")
 local config = require("storyteller.config")
+local scene_data = require("storyteller.scene")
 
 local M = {}
 
@@ -127,13 +128,14 @@ local function parse_chapter(path)
         number = n,
         start_line = i,
         end_line = nil,
-        meta = { pov = nil, location = nil },
+        inline = {},
+        meta = {},
       }
       in_scene = true
     elseif in_scene and cur and ln ~= "" then
       local k, v = ln:match("^%s*-%s*%*%*%s*([A-Za-z]+)%s*%*%*:%s*(.*)$")
       if k and v then
-        cur.meta[k:lower()] = v
+        cur.inline[k:lower()] = v
       elseif ln:match("^```$") then
         -- ignore code fences inside a scene
       end
@@ -142,6 +144,13 @@ local function parse_chapter(path)
   if cur then
     cur.end_line = #lines
     table.insert(info.scenes, cur)
+  end
+  for _, scene in ipairs(info.scenes) do
+    local block = scene_data.parse(lines, scene.start_line, scene.end_line)
+    scene.yaml = block
+    scene.meta = vim.tbl_extend("force", {}, scene.inline, block.meta)
+    scene.id = block.meta.id
+    scene.content_start = block.content_start
   end
   return info
 end
@@ -200,19 +209,28 @@ M.scenes = function(prj)
   return out
 end
 
-M.scene_words = function(sc)
-  local lines = vim.fn.readfile(sc.path)
-  if sc.end_line then
-    lines = vim.list_slice(lines, sc.start_line, sc.end_line)
-  else
-    lines = vim.list_slice(lines, sc.start_line)
-  end
-  local body = table.concat(lines, " ")
+local function count_prose(lines, start_line, end_line)
   local count = 0
-  for _ in body:gmatch("%S+") do
-    count = count + 1
+  local in_fence = false
+  for line_number = start_line, end_line do
+    local line = lines[line_number] or ""
+    if line:match("^```") then
+      in_fence = not in_fence
+    elseif not in_fence
+      and not line:match("^%s*#")
+      and not line:match("^%s*-%s*%*%*[%a ]+%*%*:%s*") then
+      for _ in line:gmatch("%S+") do
+        count = count + 1
+      end
+    end
   end
   return count
+end
+
+M.scene_words = function(sc)
+  local lines = vim.fn.readfile(sc.path)
+  local block = sc.yaml or scene_data.parse(lines, sc.start_line, sc.end_line or #lines)
+  return count_prose(lines, block.content_start or (sc.start_line + 1), sc.end_line or #lines)
 end
 
 M.chapter_words = function(ch)
@@ -220,18 +238,19 @@ M.chapter_words = function(ch)
   for _, sc in ipairs(ch.scenes) do
     total = total + (sc.words or M.scene_words(sc))
   end
-  -- include lines above first scene too
+  -- Include prose above the first scene but skip chapter frontmatter and H1.
   local lines = vim.fn.readfile(ch.path)
-  local head = {}
   local first = ch.scenes[1]
-  local upto = first and first.start_line - 1 or #lines
-  for i = 1, upto do
-    table.insert(head, lines[i])
+  local start = 1
+  if lines[1] == "---" then
+    for i = 2, #lines do
+      if lines[i] == "---" then
+        start = i + 1
+        break
+      end
+    end
   end
-  local body = table.concat(head, " ")
-  for _ in body:gmatch("%S+") do
-    total = total + 1
-  end
+  total = total + count_prose(lines, start, first and first.start_line - 1 or #lines)
   return total
 end
 

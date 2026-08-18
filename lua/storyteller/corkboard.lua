@@ -9,13 +9,14 @@
 --
 -- Keymaps (buffer-local):
 --     <CR>  open that scene at its heading line
---     d     mark scene unused (status: unused)
---     a     cycle status: outline → draft → revision → done
+--     s     select scene status
+--     u     mark scene unused (status: unused)
 --     R     rebuild buffer content
 
 local project = require("storyteller.project")
 local index = require("storyteller.index")
 local metadata = require("storyteller.metadata")
+local scene_data = require("storyteller.scene")
 
 local M = {}
 local NS = vim.api.nvim_create_namespace("StorytellerCorkboard")
@@ -63,16 +64,28 @@ local function clean(value)
 end
 
 local function scene_status(sc)
+  local local_meta = scene_data.from_index(sc).meta
+  if local_meta.status then
+    return clean(local_meta.status)
+  end
   local m = metadata.read(sc.path)
   return clean(m and m.meta and m.meta.status)
 end
 
 local function scene_pov(sc)
+  local local_meta = scene_data.from_index(sc).meta
+  if local_meta.pov then
+    return clean(local_meta.pov)
+  end
   local m = metadata.read(sc.path)
   return clean(m and m.meta and m.meta.pov) or clean(sc.meta and sc.meta.pov)
 end
 
 local function scene_location(sc)
+  local local_meta = scene_data.from_index(sc).meta
+  if local_meta.location then
+    return clean(local_meta.location)
+  end
   local m = metadata.read(sc.path)
   return clean(m and m.meta and m.meta.location) or clean(sc.meta and sc.meta.location)
 end
@@ -119,7 +132,7 @@ M.refresh = function(bufnr)
 
   local lines = {}
   lines[#lines + 1] = "Storyteller corkboard — " .. (cb.prj.root or "")
-  lines[#lines + 1] = "── <CR> open scene · a cycle status · d mark unused · R rebuild ──"
+  lines[#lines + 1] = "── <CR> open · s status · u unused · R rebuild · q close ──"
 
   local lastpath = nil
   for _, row in ipairs(cb.rows) do
@@ -176,7 +189,7 @@ M.toggle_status = function(bufnr, line)
     return
   end
   local next = NEXT_STATUS[trim(row.status)] or STATUS_ORDER[1]
-  metadata.set(row.sc.path, "status", next)
+  scene_data.update(row.sc, { status = next })
   M.refresh(bufnr)
 end
 
@@ -192,8 +205,14 @@ M.mark_unused = function(bufnr, line)
   if not row then
     return
   end
-  metadata.set(row.sc.path, "status", "unused")
-  M.refresh(bufnr)
+  vim.ui.select({ "mark unused", "cancel" }, {
+    prompt = ("Mark scene '%s' unused?"):format(row.sc.title or vim.fn.fnamemodify(row.sc.path, ":t")),
+  }, function(choice)
+    if choice == "mark unused" then
+      scene_data.update(row.sc, { status = "unused" })
+      M.refresh(bufnr)
+    end
+  end)
 end
 
 -- Open the scene under the cursor at its heading line.
@@ -216,19 +235,33 @@ end
 local function setup_keys(bufnr)
   vim.keymap.set("n", "<CR>", function()
     open_at(bufnr)
-  end, { buffer = bufnr, silent = true })
+  end, { buffer = bufnr, silent = true, desc = "Open scene" })
 
-  vim.keymap.set("n", "d", function()
+  vim.keymap.set("n", "q", "<cmd>close<cr>", { buffer = bufnr, silent = true, desc = "Close corkboard" })
+
+  vim.keymap.set("n", "u", function()
     M.mark_unused(bufnr)
-  end, { buffer = bufnr, silent = true })
+  end, { buffer = bufnr, silent = true, desc = "Mark scene unused" })
 
-  vim.keymap.set("n", "a", function()
-    M.toggle_status(bufnr)
-  end, { buffer = bufnr, silent = true })
+  vim.keymap.set("n", "s", function()
+    local cb = vim.b[bufnr].storyteller_corkboard
+    local row = cb and cb.line_to[vim.api.nvim_win_get_cursor(0)[1]]
+    if not row then
+      return
+    end
+    vim.ui.select({ "outline", "draft", "revision", "done", "unused" }, {
+      prompt = ("Status for '%s'"):format(row.sc.title or vim.fn.fnamemodify(row.sc.path, ":t")),
+    }, function(status)
+      if status then
+        scene_data.update(row.sc, { status = status })
+        M.refresh(bufnr)
+      end
+    end)
+  end, { buffer = bufnr, silent = true, desc = "Set scene status" })
 
   vim.keymap.set("n", "R", function()
     M.refresh(bufnr)
-  end, { buffer = bufnr, silent = true })
+  end, { buffer = bufnr, silent = true, desc = "Refresh corkboard" })
 end
 
 -- Open (or focus an existing) corkboard for a project. Optional filter text.
@@ -252,6 +285,7 @@ M.open = function(prj, filter)
   end
 
   local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(bufnr, "storyteller://corkboard/" .. vim.fn.fnamemodify(prj.root, ":t"))
   local bo = vim.bo[bufnr]
   bo.buftype = "nofile"
   bo.bufhidden = "wipe"

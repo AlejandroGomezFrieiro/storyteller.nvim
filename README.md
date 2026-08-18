@@ -73,9 +73,28 @@ the expected folders, or a directory containing `chapters/` or `references/`.
   export. Use `chapters/_unused/` for material you do not want in the draft.
 
 The current metadata unit is the chapter file, not an individual scene. A
-chapter status, target, tags, and detected reference links therefore apply to
-the chapter containing those scenes. Scene headings supply the finer-grained
+chapter status, target, tags, and detected reference links apply to every scene
+until a scene-local YAML block is added. Scene headings supply the finer-grained
 navigation used by the outline and corkboard.
+
+Add scene-local data immediately after a heading when a scene needs its own
+workflow state:
+
+````markdown
+## Scene 2 — The council refuses
+
+```yaml
+storyteller: scene
+status: revision
+pov: Penelope
+location: Council hall
+goal: Convince the council to leave
+conflict: The storm closes the harbor
+outcome: The council refuses
+tags:
+  - act-1
+```
+````
 
 Example chapter metadata:
 
@@ -120,6 +139,12 @@ Use `:StoryMeta` to edit this frontmatter in a scratch buffer.
 | `:StoryTemplate` | Scaffold a bundled story structure. |
 | `:StoryExport [docx\|epub\|pdf\|smf]` | Export the compiled manuscript through Pandoc. |
 | `:StoryExportAll [docx\|epub\|pdf\|smf]` | Export each chapter through Pandoc. |
+| `:StoryScenePick` / `:StorySceneNext` / `:StoryScenePrevious` | Navigate scene units. |
+| `:StoryContinuity [field=value]` | Review scene POV, location, time, and state. |
+| `:StoryRevision [git-ref]` | Review revision scenes, open tasks, and Git changes. |
+| `:StoryContext` | Open an optional drafting context split. |
+| `:StoryIdea` / `:StoryDiscoveries` | Capture and promote discovery ideas. |
+| `:StoryResume` | Return to the last recorded scene. |
 
 The nixvim writing integration assigns the common commands to `<leader>s`:
 

@@ -46,7 +46,7 @@ local function run_detect(prj)
     total = total + #sugs
     for _, s in ipairs(sugs) do
       if s.confidence >= 0.9 then
-        detect.link(s.path, s.reference)
+          detect.link(s.scene, s.reference)
         linked = linked + 1
       end
     end

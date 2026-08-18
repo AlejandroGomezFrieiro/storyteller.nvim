@@ -8,6 +8,7 @@
 
 local project = require("storyteller.project")
 local index = require("storyteller.index")
+local view = require("storyteller.view")
 
 local M = {}
 
@@ -185,19 +186,40 @@ M.dashboard = function(prj)
     vim.notify("[storyteller] Not in a storytelling project.", vim.log.levels.WARN)
     return nil
   end
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_name(buf, "storyteller://targets/" .. vim.fn.fnamemodify(prj.root, ":t"))
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(M.report(prj), "\n"))
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
-  vim.bo[buf].swapfile = false
-  vim.bo[buf].modifiable = false
+  local buf = view.open("targets", prj)
+  local function refresh()
+    local lines = { "TARGETS", "<CR> open chapter · R refresh · q close", "" }
+    local rows = {}
+    local total = M.total_words(prj)
+    lines[#lines + 1] = ("Manuscript: %d words"):format(total)
+    for _, ch in ipairs(index.chapters(prj)) do
+      local words = index.chapter_words(ch)
+      local target = ch.target or 0
+      local pct = target > 0 and math.min(100, math.floor(words / target * 100)) or 0
+      local width = 10
+      local filled = math.floor(pct / 10)
+      lines[#lines + 1] = ("[%s%s] %3d%%  %s"):format(string.rep("#", filled), string.rep(".", width - filled), pct, ch.title or ch.filename)
+      rows[#lines] = ch
+    end
+    local s = M.session_stats()
+    if s then
+      lines[#lines + 1] = ""
+      lines[#lines + 1] = ("Session: +%d words since %s"):format(s.written, s.started_at)
+    end
+    view.render(buf, lines)
+    vim.b[buf].storyteller_targets = { prj = prj, rows = rows }
+  end
+  refresh()
   vim.keymap.set("n", "R", function()
-    vim.bo[buf].modifiable = true
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(M.report(prj), "\n"))
-    vim.bo[buf].modifiable = false
+    refresh()
   end, { buffer = buf, desc = "Refresh targets dashboard" })
-  vim.api.nvim_set_current_buf(buf)
+  vim.keymap.set("n", "<CR>", function()
+    local row = vim.api.nvim_win_get_cursor(0)[1]
+    local ch = vim.b[buf].storyteller_targets.rows[row]
+    if ch then
+      vim.cmd("edit " .. vim.fn.fnameescape(ch.path))
+    end
+  end, { buffer = buf, desc = "Open chapter" })
   return buf
 end
 

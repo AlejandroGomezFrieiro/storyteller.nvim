@@ -19,10 +19,10 @@ local function ask_action(scene, sug, prj)
     prompt = ("[%d%%] %s (%s)"):format(math.floor(sug.confidence * 100 + 0.5), sug.name, sug.type),
   }, function(choice)
     if choice == "link" then
-      detect.link(scene.path, sug.reference)
+      detect.link(scene, sug.reference)
       vim.notify(("[storyteller] Linked %s (%s)."):format(sug.name, sug.type), vim.log.levels.INFO)
     elseif choice == "dismiss" then
-      detect.dismiss(scene.path, sug.reference.name)
+      detect.dismiss(scene, sug.reference.name)
       vim.notify(("[storyteller] Dismissed %s."):format(sug.reference.name), vim.log.levels.INFO)
     elseif choice == "link all" then
       local n = detect.link_all(scene, prj)

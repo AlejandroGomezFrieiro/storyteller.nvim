@@ -5,6 +5,7 @@
 local project = require("storyteller.project")
 local config = require("storyteller.config")
 local outline = require("storyteller.outline")
+local resume = require("storyteller.resume")
 
 local M = {}
 
@@ -30,6 +31,16 @@ M.setup = function()
     pattern = "markdown",
     callback = function(ev)
       attach(ev.buf)
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("BufLeave", {
+    group = group,
+    pattern = "*.md",
+    callback = function(ev)
+      if vim.b[ev.buf].storyteller_project then
+        resume.remember(vim.b[ev.buf].storyteller_project)
+      end
     end,
   })
 

@@ -31,6 +31,7 @@ M.setup = function(opts)
   require("storyteller.commands.phase3").setup()
   require("storyteller.commands.phase4").setup()
   require("storyteller.commands.phase5").setup()
+  require("storyteller.commands.phase7").setup()
   require("storyteller.command").setup()
 
   -- Autocmds: enter a buffer -> attach project + optional detect-on-save.
@@ -49,6 +50,12 @@ M.setup = function(opts)
   km.register("<leader>sn", "<cmd>StorySnapshot<cr>", "Snapshot")
   km.register("<leader>sx", "<cmd>StoryExport<cr>", "Export")
   km.register("<leader>sT", "<cmd>StoryTemplate<cr>", "Template")
+  km.register("<leader>sp", "<cmd>StoryScenePick<cr>", "Pick scene")
+  km.register("<leader>sc", "<cmd>StoryContinuity<cr>", "Continuity")
+  km.register("<leader>sv", "<cmd>StoryRevision<cr>", "Revision queue")
+  km.register("<leader>sC", "<cmd>StoryContext<cr>", "Drafting context")
+  km.register("<leader>si", "<cmd>StoryIdea<cr>", "Capture idea")
+  km.register("<leader>sl", "<cmd>StoryResume<cr>", "Resume last scene")
   km.ensure()
 
   M._initialized = true

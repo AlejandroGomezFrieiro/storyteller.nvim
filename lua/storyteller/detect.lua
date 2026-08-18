@@ -14,6 +14,7 @@
 local project = require("storyteller.project")
 local metadata = require("storyteller.metadata")
 local index = require("storyteller.index")
+local scene_data = require("storyteller.scene")
 
 local M = {}
 
@@ -138,8 +139,9 @@ end
 -- Tokenize a scene's prose (skips heading, bullet metadata, blockquotes, fences).
 local function scene_tokens(sc)
   local lines = vim.fn.readfile(sc.path)
+  local block = scene_data.parse(lines, sc.start_line, sc.end_line or #lines)
   local toks = {}
-  for i = sc.start_line, (sc.end_line or #lines) do
+  for i = block.content_start or sc.start_line, (sc.end_line or #lines) do
     local ln = lines[i]
     if ln then
       local marker = ln:match("^%s*(.)")
@@ -158,8 +160,7 @@ M.detect_scene = function(sc, prj, idx)
   prj = prj or project.current()
   idx = idx or M.build_index(prj)
 
-  local mdoc = metadata.read(sc.path)
-  local m = mdoc and mdoc.meta or {}
+  local m = scene_data.from_index(sc).meta
   local linked, ignored = {}, {}
   for _, k in ipairs({ "chars", "locs", "items", "orgs" }) do
     for _, v in ipairs(m[k] or {}) do
@@ -191,6 +192,7 @@ M.detect_scene = function(sc, prj, idx)
             type = entry.reference.type,
             reference = entry.reference,
             path = sc.path,
+            scene = sc,
           }
           used[short] = true
         end
@@ -229,15 +231,35 @@ local FIELD = {
   organizations = "orgs",
 }
 
--- Link a reference into the scene's frontmatter.
-M.link = function(scene_path, ref)
+-- Link a reference into scene YAML when present/created. String paths remain
+-- a compatibility fallback for legacy chapter-level metadata callers.
+M.link = function(scene_or_path, ref)
   local field = FIELD[ref and ref.type] or "chars"
-  metadata.push(scene_path, field, ref.name)
+  if type(scene_or_path) == "table" then
+    local current = scene_data.from_index(scene_or_path).meta
+    local values = current[field] or {}
+    for _, value in ipairs(values) do
+      if tostring(value):lower() == ref.name:lower() then
+        return
+      end
+    end
+    values[#values + 1] = ref.name
+    scene_data.update(scene_or_path, { [field] = values })
+  else
+    metadata.push(scene_or_path, field, ref.name)
+  end
 end
 
 -- Dismiss a detected name for a scene (adds to `ignore`).
-M.dismiss = function(scene_path, name)
-  metadata.push(scene_path, "ignore", name)
+M.dismiss = function(scene_or_path, name)
+  if type(scene_or_path) == "table" then
+    local current = scene_data.from_index(scene_or_path).meta
+    local values = current.ignore or {}
+    values[#values + 1] = name
+    scene_data.update(scene_or_path, { ignore = values })
+  else
+    metadata.push(scene_or_path, "ignore", name)
+  end
 end
 
 -- Auto-link confident suggestions (confidence >= 0.9) in one scene.
@@ -246,7 +268,7 @@ M.link_all = function(scene, prj)
   local linked = 0
   for _, s in ipairs(M.detect_scene(scene, prj)) do
     if s.confidence >= 0.9 then
-      M.link(scene.path, s.reference)
+      M.link(scene, s.reference)
       linked = linked + 1
     end
   end
