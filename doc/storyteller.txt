@@ -1,0 +1,66 @@
+*storyteller.txt*  Storyteller - a novel-writing engine for Neovim over Markdown.
+
+==============================================================================
+CONTENTS                                                         *storyteller*
+
+  1. Introduction..............|storyteller-intro|
+  2. Requirements............|storyteller-requirements|
+  3. Commands...............|storyteller-commands|
+  4. Options................|storyteller-options|
+
+==============================================================================
+1. INTRODUCTION                                       *storyteller-intro*
+
+Storyteller turns a Markdown writing project into a Scrivener/Kindling-class
+novel-writing environment: live per-chapter word counts and targets, two-way
+"scrivenings" compiling and editing, reference auto-detection, a corkboard,
+collections, snapshots, and pandoc export.
+
+The on-disk format mirrors the nixvim_config `storytelling` template:
+chapters/ (one file per chapter, `## Scene` blocks), references/ cards, an
+outline/, and frontmatter metadata on each file.
+
+    require("storyteller").setup({})
+
+==============================================================================
+2. REQUIREMENTS                                        *storyteller-requirements*
+
+Core plugin: Neovim 0.9+, zero hard dependencies (pure Lua + nvim API).
+
+Optional (auto-detected, recommended):
+  - telescope.nvim   (picker backend, default when present)
+  - fzf-lua          (alternate picker backend)
+  - lualine.nvim     (statusline sections, Phase 1+)
+  - rg               (faster indexing; falls back to |glob()|)
+  - pandoc           (export, Phase 5)
+  - which-key.nvim   (keybinding hints)
+
+==============================================================================
+3. COMMANDS                                            *storyteller-commands*
+
+Phase 0 provides:
+
+:StoryStatus        Show a summary of the project (chapters/scenes/words).
+:StoryOutline       Fuzzy-pick a chapter by title + word count, open it.
+
+Phase 1+ adds (planned): Outline (interactive), Scrivenings, Detect,
+References, Corkboard, Targets, Collections, Snapshot, Template, Export.
+
+Commands are registered by the platforms (F)ication simply; see
+|storyteller-options| to tweak behavior.
+
+==============================================================================
+4. OPTIONS                                          *storyteller-options*
+
+Passed to `setup({...})`:
+
+  markers          List of root-marker names used to find a project.
+  autocmds         Boolean; enable FileType/BufWritePost autocmds.
+  picker           "auto"|"telescope"|"fzf"|"minipick".
+  detect_on_save   Boolean; auto-run reference detection after save.
+  detect_debounce  ms debounce for detection.
+
+See `lua/storyteller/config.lua` for defaults.
+
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:
