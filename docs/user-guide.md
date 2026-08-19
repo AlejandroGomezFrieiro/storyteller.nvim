@@ -277,6 +277,10 @@ Storyteller ships a prose-aware language server (Rust) that replaces
 markdown-oxide for writing projects. It needs no configuration — it attaches to
 Markdown buffers under any `.storyteller` or git root.
 
+> For everything the server does — resolution rules, codex reference types,
+> code actions, diagnostics, index freshness, and troubleshooting — see the
+> dedicated **[Language Server guide](language-server.md)**.
+
 Because it resolves **bare names in prose**, you don't have to wrap characters
 or places in links. The server indexes your reference cards and their aliases,
 then matches them as you type or navigate.

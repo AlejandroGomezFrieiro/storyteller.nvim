@@ -163,7 +163,8 @@ with no `[[wikilinks]]` needed, powering:
 - code actions → create a reference card for an unknown name
 
 The nixvim writing module wires it automatically when `storyteller.lspPackage`
-is set; the standalone Nixvim module exposes `storyteller.lsp.package`.
+is set; the standalone Nixvim module exposes `storyteller.lsp.package`. Read the
+[Language Server guide](docs/language-server.md) for the full feature set.
 
 ## Installation Outside The Template
 
