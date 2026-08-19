@@ -1,13 +1,9 @@
 -- storyteller — main entry point.
 --
--- A Scrivener/Kindling-class novel-writing engine over Markdown.
 --   require("storyteller").setup({ ... })
 --
--- Contract surface (frozen so parallel subagents can build against it):
---   * storyteller.project   -> project.lua   { find_root(), paths, ... }
---   * storyteller.metadata  -> metadata.lua  { get/set_* on buffers/paths }
---   * storyteller.pickers   -> pickers/init  { pick(kind, ...) }
---   * storyteller.status    -> (Phase 1)     pure data for lualine
+-- A Scrivener/Kindling-class writing engine over Markdown, organized around
+-- five pillars: metadata, compilation, tracking, templating, and UI.
 
 local config = require("storyteller.config")
 local project = require("storyteller.project")
@@ -21,48 +17,42 @@ M.setup = function(opts)
     return M
   end
 
-  -- Detect the current project lazily; cache it per directory.
   project.setup()
 
-  -- Register :Story* user commands (Phase 0 defaults + any phase additions).
-  require("storyteller.commands.phase0").setup()
-  require("storyteller.commands.phase1").setup()
-  require("storyteller.commands.phase2").setup()
-  require("storyteller.commands.phase3").setup()
-  require("storyteller.commands.phase4").setup()
-  require("storyteller.commands.phase5").setup()
-  require("storyteller.commands.phase7").setup()
-  require("storyteller.command").setup()
+  require("storyteller.commands").setup()
 
-  -- Autocmds: enter a buffer -> attach project + optional detect-on-save.
   if config.get().autocmds then
     events.setup()
   end
 
-  -- Optional keymaps/which-key surface inside a project.
   local km = require("storyteller.keymaps")
-  km.register("<leader>so", "<cmd>StoryOutline<cr>", "Outline")
-  km.register("<leader>ss", "<cmd>StoryScrivenings<cr>", "Scrivenings")
-  km.register("<leader>sr", "<cmd>StoryReferences<cr>", "References")
-  km.register("<leader>sd", "<cmd>StoryDetectScene<cr>", "Detect refs in scene")
-  km.register("<leader>sb", "<cmd>StoryCorkboard<cr>", "Corkboard")
-  km.register("<leader>st", "<cmd>StoryTargets<cr>", "Targets")
-  km.register("<leader>sn", "<cmd>StorySnapshot<cr>", "Snapshot")
-  km.register("<leader>sx", "<cmd>StoryExport<cr>", "Export")
-  km.register("<leader>sT", "<cmd>StoryTemplate<cr>", "Template")
-  km.register("<leader>sp", "<cmd>StoryScenePick<cr>", "Pick scene")
-  km.register("<leader>sc", "<cmd>StoryContinuity<cr>", "Continuity")
-  km.register("<leader>sv", "<cmd>StoryRevision<cr>", "Revision queue")
-  km.register("<leader>sC", "<cmd>StoryContext<cr>", "Drafting context")
-  km.register("<leader>si", "<cmd>StoryIdea<cr>", "Capture idea")
-  km.register("<leader>sl", "<cmd>StoryResume<cr>", "Resume last scene")
+  km.register("<leader>s", "<cmd>Story<cr>", "Dashboard")
+  km.register("<leader>so", "<cmd>Story outline<cr>", "Outline")
+  km.register("<leader>sn", "<cmd>Story next<cr>", "Next scene")
+  km.register("<leader>sp", "<cmd>Story prev<cr>", "Previous scene")
+  km.register("<leader>sb", "<cmd>Story corkboard<cr>", "Corkboard")
+  km.register("<leader>sm", "<cmd>Story meta<cr>", "Edit scene metadata")
+  km.register("<leader>ss", "<cmd>Story status<cr>", "Cycle scene status")
+  km.register("<leader>sc", "<cmd>Story compile<cr>", "Compile manuscript")
+  km.register("<leader>st", "<cmd>Story track<cr>", "Tracking")
+  km.register("<leader>sd", "<cmd>Story detect<cr>", "Detect references")
+  km.register("<leader>sr", "<cmd>Story references<cr>", "References")
+  km.register("<leader>sl", "<cmd>Story resume<cr>", "Resume last scene")
+  km.register("<leader>se", "<cmd>Story export<cr>", "Export")
+  km.register("<leader>sT", "<cmd>Story template<cr>", "Template")
+  km.register("<leader>sw", "<cmd>Story workspace<cr>", "Workspace")
+  km.register("<leader>si", "<cmd>Story idea<cr>", "Capture idea")
   km.ensure()
+
+  -- Visual-mode: create a reference card from the selection.
+  vim.keymap.set("v", "<leader>sr", function()
+    require("storyteller.capture").run()
+  end, { desc = "Create reference card from selection", silent = true })
 
   M._initialized = true
   return M
 end
 
--- Conveniences so consumers don't reach into internals everywhere.
 M.get_project = function()
   return project.current()
 end

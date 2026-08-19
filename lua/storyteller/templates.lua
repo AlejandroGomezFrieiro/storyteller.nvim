@@ -6,30 +6,25 @@
 
 local config = require("storyteller.config")
 local project = require("storyteller.project")
-local metadata = require("storyteller.metadata")
+local meta = require("storyteller.meta")
 
 local M = {}
-
--- --- Template discovery -----------------------------------------------------
 
 local function join(...)
   return table.concat({ ... }, "/")
 end
 
--- Candidate template dirs: config override first, then every `templates/`
--- directory found on the runtimepath (plugin package usually owns one).
 local function dirs()
   local out = {}
   local seen = {}
   local function add(dir)
     if dir and dir ~= "" and vim.fn.isdirectory(dir) == 1 and not seen[dir] then
       seen[dir] = true
-      table.insert(out, dir)
+      out[#out + 1] = dir
     end
   end
   add(config.get().templates_dir)
-  local rtp = vim.opt.runtimepath:get() or {}
-  for _, base in ipairs(rtp) do
+  for _, base in ipairs(vim.opt.runtimepath:get() or {}) do
     if base ~= "" then
       add(join(base, "templates"))
     end
@@ -38,18 +33,15 @@ local function dirs()
   return out
 end
 
--- All `*.json` files under the template dirs, de-duplicated by basename with
--- repo/override priority (override dir first).
 local function template_files()
   local files = {}
   local seen = {}
   for _, dir in ipairs(dirs()) do
-    local globs = vim.fn.glob(dir .. "/" .. "*.json", false, true) or {}
-    for _, p in ipairs(globs) do
+    for _, p in ipairs(vim.fn.glob(dir .. "/*.json", false, true) or {}) do
       local base = vim.fn.fnamemodify(p, ":t")
       if not seen[base] then
         seen[base] = true
-        table.insert(files, p)
+        files[#files + 1] = p
       end
     end
   end
@@ -64,48 +56,38 @@ local function decode(path)
   return data
 end
 
--- --- Public API -------------------------------------------------------------
-
--- Load a template by file stem, `id`, or `name`. Returns the decoded table or
--- nil. Searches override/per-package dirs and falls back to path heuristics.
 M.load = function(name)
   if not name then
     return nil
   end
-  -- 1. exact file treat (drive name as a stem): templates/<name>.json
-  local stem = (name:gsub("%.json$", ""))
+  local stem = name:gsub("%.json$", "")
   for _, dir in ipairs(dirs()) do
     local p = join(dir, stem .. ".json")
     if vim.loop.fs_stat(p) then
       return decode(p)
     end
   end
-  -- 2. scan every known template file for a matching id/name
   for _, p in ipairs(template_files()) do
     local t = decode(p)
-    if t then
-      if t.id == name or t.name == name then
-        return t
-      end
+    if t and (t.id == name or t.name == name) then
+      return t
     end
   end
   return nil
 end
 
--- Names (id) of every available template.
-M.list = function(_prj)
+M.list = function()
   local names = {}
   for _, p in ipairs(template_files()) do
     local t = decode(p)
     if t and t.id then
-      table.insert(names, t.id)
+      names[#names + 1] = t.id
     end
   end
   table.sort(names)
   return names
 end
 
--- Quick summaries for a picker: one entry per available template.
 M.entries = function()
   local out = {}
   local seen = {}
@@ -113,11 +95,11 @@ M.entries = function()
     local t = decode(p)
     if t and t.id and not seen[t.id] then
       seen[t.id] = true
-      table.insert(out, {
+      out[#out + 1] = {
         value = t,
         display = ("%s · %s"):format(t.id, t.name or ""),
         hint = t.description,
-      })
+      }
     end
   end
   table.sort(out, function(a, b)
@@ -129,34 +111,31 @@ end
 local function slugify(s)
   s = (s or ""):lower()
   s = s:gsub("[^%w%s-]", "")
-  s = (s:gsub("%s+", "-"))
+  s = s:gsub("%s+", "-")
   return s
 end
 
 local function scene_lines(scene)
-  local lines = {}
-  table.insert(lines, "")
-  table.insert(lines, "## " .. tostring(scene.title))
+  local lines = { "", "## " .. tostring(scene.title) }
   if scene.synopsis and scene.synopsis ~= "" then
-    table.insert(lines, "")
-    table.insert(lines, "> **Synopsis:** " .. scene.synopsis)
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "> **Synopsis:** " .. scene.synopsis
   end
-  table.insert(lines, "")
+  lines[#lines + 1] = ""
   return lines
 end
 
--- Scaffold one beat (→ one chapter file) with frontmatter + scene headings.
 local function write_beat(path, beat, act_number)
   if vim.loop.fs_stat(path) then
-    return false -- skip existing
+    return false
   end
   local lines = {}
-  vim.list_extend(lines, metadata.encode({ type = "chapter", planning = "flexible" }))
-  table.insert(lines, "")
-  table.insert(lines, ("# %02d · %s"):format(act_number, tostring(beat.title)))
+  vim.list_extend(lines, meta.serde.encode_frontmatter({ type = "chapter", planning = "flexible" }))
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = ("# %02d · %s"):format(act_number, tostring(beat.title))
   if beat.synopsis and beat.synopsis ~= "" then
-    table.insert(lines, "")
-    table.insert(lines, "> " .. beat.synopsis)
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "> " .. beat.synopsis
   end
   for _, scene in ipairs(beat.scenes or {}) do
     vim.list_extend(lines, scene_lines(scene))
@@ -165,24 +144,43 @@ local function write_beat(path, beat, act_number)
   return true
 end
 
--- Apply a template to a project: one chapter per beat under `chapters/`,
--- frontmatter `type: chapter` + `planning: flexible`, scenes as `## ` headings.
--- Skips files that already exist.
-M.apply = function(prj, name)
+-- Compute what `apply` would create without writing anything.
+function M.plan(prj, name)
   prj = prj or project.current()
   if not prj then
-    vim.notify("[storyteller] Not in a storytelling project.", vim.log.levels.WARN)
     return nil
   end
   local t = M.load(name)
   if not t then
+    return nil
+  end
+  local created, skipped = {}, {}
+  for _i, part in ipairs(t.structure or {}) do
+    for _j, beat in ipairs(part.children or {}) do
+      local slug = slugify(beat.title)
+      if slug == "" then
+        slug = "beat"
+      end
+      local path = join(prj.chapters, slug .. ".md")
+      if vim.loop.fs_stat(path) then
+        skipped[#skipped + 1] = path
+      else
+        created[#created + 1] = path
+      end
+    end
+  end
+  return { template = t, created = created, skipped = skipped }
+end
+
+M.apply = function(prj, name)
+  local plan = M.plan(prj, name)
+  if not plan then
     vim.notify(("[storyteller] Unknown template: %s"):format(tostring(name)), vim.log.levels.ERROR)
     return nil
   end
-  vim.fn.mkdir(prj.chapters, "p")
-  local created = 0
-  local skipped = 0
-  for _i, part in ipairs(t.structure or {}) do
+  vim.fn.mkdir(plan.created and plan.created[1] and vim.fn.fnamemodify(plan.created[1], ":h") or prj.chapters, "p")
+  local created, skipped = 0, 0
+  for _i, part in ipairs(plan.template.structure or {}) do
     for _j, beat in ipairs(part.children or {}) do
       local slug = slugify(beat.title)
       if slug == "" then
@@ -198,10 +196,10 @@ M.apply = function(prj, name)
   end
   vim.notify(
     ("[storyteller] Template '%s' applied: %d chapters created, %d skipped")
-      :format(t.id, created, skipped),
+      :format(plan.template.id, created, skipped),
     vim.log.levels.INFO
   )
-  return { created = created, skipped = skipped, template = t }
+  return { created = created, skipped = skipped, template = plan.template }
 end
 
 M.slugify = slugify

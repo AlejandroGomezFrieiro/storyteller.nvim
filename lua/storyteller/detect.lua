@@ -7,19 +7,13 @@
 --   * characters: full name        -> 1.0
 --   * characters: unique first name-> 0.7
 --   * locations/items/orgs: full   -> 1.0
---
--- Suggestions already linked (chars/locs/items/orgs) or in `ignore` are
--- filtered out.
 
 local project = require("storyteller.project")
-local metadata = require("storyteller.metadata")
+local meta = require("storyteller.meta")
 local index = require("storyteller.index")
-local scene_data = require("storyteller.scene")
 
 local M = {}
 
--- ASCII punctuation ords we treat as strippable (excludes apostrophe 0x27 so
--- "Alice's" is not trimmed into "alice", per the Kindling algorithm).
 local PUNCT = {}
 for i = 33, 126 do
   local c = string.char(i)
@@ -32,7 +26,6 @@ local function strip(s)
   return (s:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
--- Trim leading/trailing ASCII punctuation (but keep apostrophes inside words).
 local function trim_punct(s)
   while s ~= "" do
     local b = string.byte(s, 1)
@@ -60,8 +53,6 @@ end
 -- --- Public API ------------------------------------------------------------
 
 -- Build { name_lower -> { name, reference, confidence } } over all references.
--- `reference` is normalized: index cards lack a `.name`, so we add the
--- canonical full name (names[1]) for `link`/`dismiss` to push into frontmatter.
 M.build_index = function(prj)
   prj = prj or project.current()
   local refs = index.all_references(prj)
@@ -94,7 +85,6 @@ M.build_index = function(prj)
     end
   end
 
-  -- First pass: full names (+ first-name uniqueness counts).
   for _, ref in ipairs(refs) do
     local names = ref.names or {}
     if #names > 0 then
@@ -111,7 +101,6 @@ M.build_index = function(prj)
     end
   end
 
-  -- Aliases: treat each as a full-name spelling (confidence 1.0).
   for _, ref in ipairs(refs) do
     local names = ref.names or {}
     for i = 2, #names do
@@ -122,7 +111,6 @@ M.build_index = function(prj)
     end
   end
 
-  -- Unique first names for characters (0.7), unless identical to one-word full names.
   for _, ref in ipairs(refs) do
     if ref.type == "characters" and ref.names and #ref.names > 0 then
       local full = strip(tostring(ref.names[1]))
@@ -136,10 +124,10 @@ M.build_index = function(prj)
   return bykey
 end
 
--- Tokenize a scene's prose (skips heading, bullet metadata, blockquotes, fences).
+-- Tokenize a scene's prose (skips heading, bullets, blockquotes, fences).
 local function scene_tokens(sc)
   local lines = vim.fn.readfile(sc.path)
-  local block = scene_data.parse(lines, sc.start_line, sc.end_line or #lines)
+  local block = meta.scene_block(lines, sc.start_line, sc.end_line or #lines)
   local toks = {}
   for i = block.content_start or sc.start_line, (sc.end_line or #lines) do
     local ln = lines[i]
@@ -160,7 +148,7 @@ M.detect_scene = function(sc, prj, idx)
   prj = prj or project.current()
   idx = idx or M.build_index(prj)
 
-  local m = scene_data.from_index(sc).meta
+  local m = meta.scene(sc).meta
   local linked, ignored = {}, {}
   for _, k in ipairs({ "chars", "locs", "items", "orgs" }) do
     for _, v in ipairs(m[k] or {}) do
@@ -213,7 +201,7 @@ M.detect_project = function(prj)
   for _, sc in ipairs(index.scenes(prj)) do
     local existing = out[sc.path] or {}
     for _, s in ipairs(M.detect_scene(sc, prj, idx)) do
-      table.insert(existing, s)
+      existing[#existing + 1] = s
     end
     out[sc.path] = existing
   end
@@ -231,34 +219,47 @@ local FIELD = {
   organizations = "orgs",
 }
 
--- Link a reference into scene YAML when present/created. String paths remain
--- a compatibility fallback for legacy chapter-level metadata callers.
+local function push_unique(list, item)
+  list = list or {}
+  for _, v in ipairs(list) do
+    if tostring(v):lower() == tostring(item):lower() then
+      return list
+    end
+  end
+  list[#list + 1] = item
+  return list
+end
+
+-- Link a reference into a scene's metadata.
 M.link = function(scene_or_path, ref)
   local field = FIELD[ref and ref.type] or "chars"
   if type(scene_or_path) == "table" then
-    local current = scene_data.from_index(scene_or_path).meta
-    local values = current[field] or {}
-    for _, value in ipairs(values) do
-      if tostring(value):lower() == ref.name:lower() then
-        return
-      end
-    end
-    values[#values + 1] = ref.name
-    scene_data.update(scene_or_path, { [field] = values })
+    local scene = scene_or_path
+    local info = meta.scene(scene)
+    info.meta[field] = push_unique(info.meta[field], ref.name)
+    meta.scene_write(scene, { [field] = info.meta[field] })
   else
-    metadata.push(scene_or_path, field, ref.name)
+    local doc = meta.chapter(scene_or_path)
+    if doc then
+      doc.meta[field] = push_unique(doc.meta[field], ref.name)
+      meta.chapter_write(scene_or_path, { [field] = doc.meta[field] })
+    end
   end
 end
 
 -- Dismiss a detected name for a scene (adds to `ignore`).
 M.dismiss = function(scene_or_path, name)
   if type(scene_or_path) == "table" then
-    local current = scene_data.from_index(scene_or_path).meta
-    local values = current.ignore or {}
-    values[#values + 1] = name
-    scene_data.update(scene_or_path, { ignore = values })
+    local scene = scene_or_path
+    local info = meta.scene(scene)
+    info.meta.ignore = push_unique(info.meta.ignore, name)
+    meta.scene_write(scene, { ignore = info.meta.ignore })
   else
-    metadata.push(scene_or_path, "ignore", name)
+    local doc = meta.chapter(scene_or_path)
+    if doc then
+      doc.meta.ignore = push_unique(doc.meta.ignore, name)
+      meta.chapter_write(scene_or_path, { ignore = doc.meta.ignore })
+    end
   end
 end
 

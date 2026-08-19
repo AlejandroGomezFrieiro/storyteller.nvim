@@ -119,13 +119,8 @@ end
 -- Project for the current buffer, if inside one.
 M.current = function()
   local bufnr = vim.api.nvim_get_current_buf()
-  -- Derived Storyteller buffers have no filename. Keep their originating
-  -- project context so commands can chain naturally (for example, corkboard
-  -- -> Scrivenings or targets -> export).
-  local corkboard = vim.b[bufnr].storyteller_corkboard
-  if corkboard and corkboard.prj then
-    return corkboard.prj
-  end
+  -- Derived Storyteller buffers (views, Scrivenings) have no filename but
+  -- carry their originating project so commands can chain naturally.
   local scrivenings = vim.b[bufnr].storyteller_scrivenings
   if scrivenings and scrivenings.prj then
     return scrivenings.prj

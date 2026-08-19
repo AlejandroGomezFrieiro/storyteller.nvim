@@ -15,24 +15,15 @@ local DEFAULTS = {
   detect_debounce = 300, -- ms
   -- Picker backend: "telescope" | "fzf" | "auto".
   picker = "auto",
-  -- Per-text-width column for prose (used for a status hint).
-  target_icon = "🎯",
-  -- Collections: which predicates to expose as quick filters.
-  collections = {
-    predicates = {
-      "pov",
-      "location",
-      "status",
-      "planning",
-      "unfinished",
-      "tagged",
-    },
-  },
+  -- UI backend: "auto" | "morph" | "nui" | "buffer". `auto` uses morph+nui
+  -- when present and falls back to plain nofile buffers.
+  ui = "auto",
+  -- Heatmap window width in weeks for the tracking dashboard.
+  heatmap_weeks = 30,
   -- Binaries used (optional). Falls back to vim glob/systemlist otherwise.
   rg = vim.fn.executable("rg") == 1 and "rg" or nil,
   pandoc = vim.fn.executable("pandoc") == 1 and "pandoc" or nil,
   status = {
-    -- Extra status fields surfaced to lualine.
     show_session = true,
     show_target = true,
   },

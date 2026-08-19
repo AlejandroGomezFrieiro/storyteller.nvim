@@ -1,0 +1,27 @@
+{
+  "statuses": ["outline", "draft", "revision", "done", "unused"],
+  "status_next": {
+    "outline": "draft",
+    "draft": "revision",
+    "revision": "done",
+    "done": "unused",
+    "unused": "outline"
+  },
+  "scene_fields": [
+    "id", "status", "planning", "pov", "location", "time",
+    "goal", "conflict", "outcome", "beat", "target", "tags",
+    "chars", "locs", "items", "orgs", "ignore"
+  ],
+  "chapter_fields": [
+    "type", "pov", "location", "status", "planning", "target",
+    "chars", "locs", "items", "orgs", "ignore", "tags", "aliases", "names"
+  ],
+  "list_fields": ["tags", "chars", "locs", "items", "orgs", "ignore", "aliases", "names"],
+  "scene_sentinel": "storyteller: scene",
+  "reference_types": {
+    "character": { "dir": "characters", "label": "Character" },
+    "location": { "dir": "locations", "label": "Location" },
+    "item": { "dir": "items", "label": "Item" },
+    "organization": { "dir": "organizations", "label": "Organization" }
+  }
+}

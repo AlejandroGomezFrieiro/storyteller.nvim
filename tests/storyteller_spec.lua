@@ -27,13 +27,10 @@ vim.fn.writefile({}, tmp .. "/.storyteller")
 
 local project = require("storyteller.project")
 local config = require("storyteller.config")
-local metadata = require("storyteller.metadata")
-local target = require("storyteller.target")
-local scrivenings = require("storyteller.scrivenings")
-local export = require("storyteller.export")
-local corkboard = require("storyteller.corkboard")
+local meta = require("storyteller.meta")
+local track = require("storyteller.track")
+local compile = require("storyteller.compile")
 local index = require("storyteller.index")
-local scene_data = require("storyteller.scene")
 
 -- An explicit marker must be enough to bootstrap the standard layout.
 local marker_project = project.resolve(tmp .. "/idea.md")
@@ -59,7 +56,7 @@ vim.fn.writefile({
   words(10),
 }, chapter)
 
-metadata.set(chapter, "status", "done")
+meta.chapter_write(chapter, { status = "done" })
 local after_metadata = table.concat(vim.fn.readfile(chapter), "\n")
 assert_true(after_metadata:find("# editorial comment", 1, true) ~= nil, "metadata mutation preserves comments")
 assert_true(after_metadata:find("nested: keep%-me") ~= nil, "metadata mutation preserves unsupported YAML")
@@ -73,7 +70,7 @@ vim.fn.writefile({
 local parsed_scene = index.scenes(prj)[1]
 assert_true(parsed_scene.meta.status == "revision" and parsed_scene.meta.pov == "Odysseus", "scene YAML metadata is indexed")
 assert_true(index.scene_words(parsed_scene) == 10, "scene word count excludes YAML block")
-assert_true(scene_data.ensure_id(parsed_scene) ~= nil, "scene receives stable ID when needed")
+assert_true(meta.ensure_id(parsed_scene) ~= nil, "scene receives stable ID when needed")
 
 -- The progress format stores a cumulative total so day three is a real delta.
 local original_date = os.date
@@ -86,13 +83,13 @@ os.date = function(format)
   return original_date(format)
 end
 vim.fn.writefile({ "# Chapter 1", words(10) }, chapter)
-target.progress_append(prj)
+track.progress_append(prj)
 vim.fn.writefile({ "# Chapter 1", words(20) }, chapter)
 day = 2
-target.progress_append(prj)
+track.progress_append(prj)
 vim.fn.writefile({ "# Chapter 1", words(25) }, chapter)
 day = 3
-target.progress_append(prj)
+track.progress_append(prj)
 os.date = original_date
 local progress = vim.fn.readfile(tmp .. "/progress.log")
 assert_true(progress[1] == "2026-01-01 10 10", "progress records first total")
@@ -102,7 +99,7 @@ assert_true(progress[3] == "2026-01-03 5 25", "progress records third-day delta"
 -- Scrivenings must synchronize a clean source buffer after write-back.
 vim.cmd("edit " .. vim.fn.fnameescape(chapter))
 local source_buf = vim.api.nvim_get_current_buf()
-local scriv_buf = scrivenings.open(prj)
+local scriv_buf = compile.open(prj)
 local lines = vim.api.nvim_buf_get_lines(scriv_buf, 0, -1, false)
 for i, line in ipairs(lines) do
   if line:find("word word", 1, true) then
@@ -117,7 +114,7 @@ assert_true(source_lines:find("synchronized prose", 1, true) ~= nil, "Scrivening
 
 -- A modified source buffer must not be allowed to overwrite Scrivenings output.
 vim.api.nvim_buf_set_lines(source_buf, 0, 1, false, { "unsaved conflicting buffer" })
-local conflict_scriv = scrivenings.open(prj, { bang = true })
+local conflict_scriv = compile.open(prj, { bang = true })
 local conflict_lines = vim.api.nvim_buf_get_lines(conflict_scriv, 0, -1, false)
 for i, line in ipairs(conflict_lines) do
   if line:find("synchronized prose", 1, true) then
@@ -129,13 +126,8 @@ vim.api.nvim_buf_set_lines(conflict_scriv, 0, -1, false, conflict_lines)
 vim.cmd("write")
 assert_true(vim.bo[source_buf].readonly, "Scrivenings protects modified stale source buffer")
 
--- Commands from Storyteller scratch buffers retain their originating project.
-local board = corkboard.open(prj)
-assert_true(project.current().root == prj.root, "corkboard retains project context")
-assert_true(scrivenings.open() ~= nil, "Scrivenings opens from corkboard context")
-
 -- A fake pandoc copies its input so export output can be inspected without a
--- document toolchain. Per-chapter Storyteller metadata must not leak into it.
+-- document toolchain. Storyteller metadata must not leak into it.
 local fake_bin = tmp .. "/bin"
 vim.fn.mkdir(fake_bin, "p")
 local fake_pandoc = fake_bin .. "/pandoc"
@@ -150,19 +142,121 @@ vim.env.PATH = fake_bin .. ":" .. old_path
 vim.fn.writefile({
   "---", "status: draft", "chars:", "  - Odysseus", "---",
   "# Chapter 1", "visible manuscript prose",
+  "", "## Scene 1",
+  "- [ ] plan the reunion",
+  "- **POV:** Odysseus",
+  "- **Location:** Ithaca",
+  "```yaml", "storyteller: scene", "status: outline", "pov: Odysseus", "```",
 }, chapter)
-local output = export.manuscript(prj, "docx")
+local output = compile.export(prj, "docx")
 local compiled = output and table.concat(vim.fn.readfile(output), "\n") or ""
 assert_true(compiled:find("visible manuscript prose", 1, true) ~= nil, "export includes chapter prose")
 assert_true(compiled:find("status: draft", 1, true) == nil, "export excludes chapter frontmatter")
-local chapter_outputs = export.all(prj, "epub")
+assert_true(compiled:find("plan the reunion", 1, true) == nil, "export excludes planning checklists")
+assert_true(compiled:find("POV:", 1, true) == nil, "export excludes inline metadata fields")
+assert_true(compiled:find("storyteller: scene", 1, true) == nil, "export excludes scene YAML blocks")
+local chapter_outputs = compile.export_all(prj, "epub")
 vim.env.PATH = old_path
 assert_true(chapter_outputs and #chapter_outputs == 1, "export all creates one output per chapter")
 
+-- The migration rewrites inline bullets into scene YAML.
+vim.fn.writefile({
+  "# Chapter 1",
+  "## Scene 1",
+  "- **POV:** Odysseus",
+  "- **Location:** Ithaca",
+  "some prose words here",
+}, chapter)
+local migrated = meta.migrate(chapter)
+assert_true(migrated == 1, "inline metadata migrates to a scene YAML block")
+local migrated_lines = table.concat(vim.fn.readfile(chapter), "\n")
+assert_true(migrated_lines:find("storyteller: scene", 1, true) ~= nil, "migration emits scene YAML sentinel")
+assert_true(migrated_lines:find("%- %*%*POV:%*%*") == nil, "migration removes inline POV bullet")
+
 require("storyteller").setup({ autocmds = false })
-for _, name in ipairs({ "StoryScenePick", "StoryContinuity", "StoryRevision", "StoryContext", "StoryIdea", "StoryResume" }) do
-  assert_true(vim.fn.exists(":" .. name) == 2, name .. " command is registered")
+assert_true(vim.fn.exists(":Story") == 2, ":Story command is registered")
+
+-- Command surface: the new subcommands are registered.
+local commands = require("storyteller.commands")
+for _, name in ipairs({ "capture", "idea", "ideas", "snapshots", "template", "export", "workspace", "palette" }) do
+  assert_true(commands.handlers[name] ~= nil, "command '" .. name .. "' is registered")
 end
+local comp = commands.complete("out")
+assert_true(comp[1] == "outline", "command completion suggests 'outline'")
+
+-- Capture: create a reference card from a name.
+local capture = require("storyteller.capture")
+local card = capture.create(prj, "character", "Cassandra")
+assert_true(card ~= nil and vim.fn.filereadable(card) == 1, "capture creates a character card")
+local card_text = table.concat(vim.fn.readfile(card), "\n")
+assert_true(card_text:find("names:", 1, true) ~= nil, "capture card has names frontmatter")
+assert_true(card_text:find("## Cassandra", 1, true) ~= nil, "capture card has heading")
+
+-- Ideas inbox.
+local ideas = require("storyteller.ideas")
+ideas.append(prj, "the storm was arranged")
+local ideas_text = table.concat(vim.fn.readfile(tmp .. "/research/ideas.md"), "\n")
+assert_true(ideas_text:find("the storm was arranged", 1, true) ~= nil, "ideas append to research/ideas.md")
+
+-- Template plan reports created/skipped without writing.
+local templates = require("storyteller.templates")
+local plan = templates.plan(prj, "three-act-structure")
+assert_true(plan ~= nil and #plan.created > 0, "template plan lists chapters to create")
+
+-- Scene metadata resolution: scene YAML wins, chapter frontmatter is a default.
+local ch2 = tmp .. "/chapters/02_resolution.md"
+vim.fn.writefile({
+  "---", "status: draft", "target: 2000", "---",
+  "# Chapter 2 — Resolution",
+  "## Scene 1",
+  "```yaml", "storyteller: scene", "status: revision", "pov: Odysseus", "```",
+  "prose words here",
+}, ch2)
+local scene2
+for _, sc in ipairs(index.scenes(prj)) do
+  if sc.path == ch2 then
+    scene2 = sc
+  end
+end
+assert_true(scene2 ~= nil, "resolution chapter is indexed")
+assert_true(scene2.meta.status == "revision", "scene status overrides chapter status")
+assert_true(scene2.meta.target == 2000, "chapter target is a default for the scene")
+local resolved = meta.scene(scene2).meta
+assert_true(resolved.status == "revision" and resolved.target == 2000, "meta.scene resolves scene -> chapter")
+
+-- Tracking stats: heatmap, streaks, milestones shapes.
+local heat = track.heatmap(prj, 4)
+assert_true(#heat == 28, "heatmap covers 4 weeks")
+local streaks = track.streaks(prj)
+assert_true(type(streaks.current) == "number" and type(streaks.longest) == "number", "streaks returns numbers")
+assert_true(#track.milestones(prj) > 0, "milestones returns entries")
+
+-- Snapshots are git-only and never create documents.
+local snapshot = require("storyteller.snapshot")
+local snap = snapshot.snapshot(prj)
+assert_true(vim.fn.isdirectory(tmp .. "/build/snapshots") == 0, "snapshot never creates build/snapshots")
+if snap and snap.type == "git" then
+  local log = vim.fn.systemlist({ "git", "-C", tmp, "log", "--oneline" })
+  assert_true(#log > 0, "git snapshot creates a commit")
+end
+
+-- Schema consistency: schema.lua must mirror server/schema.json.
+local schema = require("storyteller.schema")
+local schema_json = vim.json.decode(table.concat(vim.fn.readfile(root .. "/server/schema.json"), "\n"))
+assert_true(vim.deep_equal(schema.statuses, schema_json.statuses), "schema.statuses matches schema.json")
+assert_true(vim.deep_equal(schema.scene_fields, schema_json.scene_fields), "schema.scene_fields matches schema.json")
+assert_true(vim.deep_equal(schema.chapter_fields, schema_json.chapter_fields), "schema.chapter_fields matches schema.json")
+local list_fields = {}
+for k in pairs(schema.list_fields) do
+  list_fields[#list_fields + 1] = k
+end
+table.sort(list_fields)
+local json_list = {}
+for _, k in ipairs(schema_json.list_fields) do
+  json_list[#json_list + 1] = k
+end
+table.sort(json_list)
+assert_true(vim.deep_equal(list_fields, json_list), "schema.list_fields matches schema.json")
 
 vim.fn.delete(tmp, "rf")
 print(("RESULT: %d passed, %d failed"):format(passed, failed))

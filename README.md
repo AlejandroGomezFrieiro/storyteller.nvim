@@ -37,26 +37,68 @@ words/dictionary.txt       project vocabulary
 For detailed workflow guidance, read the
 [user guide](docs/user-guide.md).
 
-![Storyteller corkboard followed by a Scrivenings manuscript view](docs/assets/storyteller.gif)
+## Five Pillars
 
-*A Markdown project viewed first as a corkboard, then as one editable
-Scrivenings buffer. The recording is generated from
-[`docs/vhs/storyteller.tape`](docs/vhs/storyteller.tape).*
+Storyteller is organized around five ideas:
 
-## What Storyteller Adds
+- **Metadata** — one scene-centric schema. Each scene owns its workflow state
+  in a YAML block; chapter frontmatter holds shared defaults. Legacy inline
+  `- **POV:** …` bullets are read transparently and migratable.
+- **Compilation** — a metadata-free longform manuscript, an editable two-way
+  *Scrivenings* view that writes changes back to the chapter files, and Pandoc
+  export.
+- **Tracking** — writing sessions, a daily progress log, an activity heatmap,
+  streaks, milestones, and safety snapshots.
+- **Templating** — bundled story structures (three-act, hero's journey, save
+  the cat, story circle, seven point).
+- **UI** — a buffer-first, Scrivener-style workspace: binder, corkboard,
+  outliner, inspector, and a dashboard. `nui.nvim` is optional; `morph.nvim`
+  is vendored. Everything degrades to plain buffers.
 
-- Chapter outline with live word counts and targets.
-- Two-way Scrivenings: edit a compiled manuscript buffer, then `:write` back to
-  individual chapter files.
-- Reference cards and conservative name detection for characters, locations,
-  items, and organizations.
-- Corkboard and smart collections for reviewing scenes.
-- Session totals, daily progress, and snapshots before revisions.
-- Structure templates and Pandoc export.
+## Commands
 
-The core has no mandatory plugin dependencies. It uses Telescope or fzf-lua
-when present and falls back to `vim.ui.select`; Pandoc is needed only for
-export.
+A single `:Story` command with subcommand-style arguments and completion:
+
+| Command | Purpose |
+| --- | --- |
+| `:Story` | Open the dashboard. |
+| `:Story outline` | Chapter outline with word counts and targets. |
+| `:Story scenes` | Pick a scene. |
+| `:Story next` / `prev` | Move between scenes. |
+| `:Story corkboard [filter]` | Review scene cards. |
+| `:Story resume` | Return to the last visited scene. |
+| `:Story meta` | Edit the current scene's metadata. |
+| `:Story status [status]` | Set (or cycle) the current scene status. |
+| `:Story migrate` | Rewrite inline `- **Key:**` bullets as scene YAML. |
+| `:Story compile[!]` | Open the editable continuous manuscript. |
+| `:Story manuscript` | Write `build/manuscript.md` (metadata-free). |
+| `:Story track` | Open the tracking dashboard. |
+| `:Story session start\|end` | Track a writing session. |
+| `:Story snapshot [message]` | Create a safety snapshot. |
+| `:Story references` | Browse reference cards. |
+| `:Story capture [type]` | Create a reference card from a visual selection. |
+| `:Story detect [scene]` | Detect and link references. |
+| `:Story idea` | Capture an idea into `research/ideas.md`. |
+| `:Story ideas` | Open the ideas inbox. |
+| `:Story template [name]` | Apply a story structure (with preview). |
+| `:Story export [fmt]` | Export the manuscript (docx/epub/pdf/smf). |
+| `:Story export all [fmt]` | Export each chapter. |
+| `:Story snapshots` | List git snapshots. |
+| `:Story workspace` | Toggle the binder + inspector workspace. |
+| `:Story palette` | Command palette. |
+
+Default keymaps put these under `<leader>s`:
+
+| Key | Purpose |
+| --- | --- |
+| `<leader>s` | Dashboard |
+| `<leader>so` | Outline |
+| `<leader>sb` | Corkboard |
+| `<leader>sc` | Compile |
+| `<leader>st` | Tracking |
+| `<leader>se` | Export |
+| `<leader>sT` | Template |
+| `<leader>sw` | Workspace |
 
 ## Project Model
 
@@ -66,119 +108,55 @@ the expected folders, or a directory containing `chapters/` or `references/`.
 - A **chapter** is one file in `chapters/`.
 - A **scene** is a `##` heading within a chapter.
 - A **reference card** is a Markdown file below `references/<type>/`.
-- Metadata lives in YAML frontmatter at the top of the **chapter file**.
-- `- **POV:** ...`, `- **Location:** ...`, and `- **Beat:** ...` fields inside
-  a scene remain supported for compatibility with the supplied snippets.
-- Files or folders beginning with `_` are excluded from project indexing and
-  export. Use `chapters/_unused/` for material you do not want in the draft.
+- Scene metadata lives in a YAML block immediately below the heading:
 
-The current metadata unit is the chapter file, not an individual scene. A
-chapter status, target, tags, and detected reference links apply to every scene
-until a scene-local YAML block is added. Scene headings supply the finer-grained
-navigation used by the outline and corkboard.
+  ````markdown
+  ## Scene 2 — The council refuses
 
-Add scene-local data immediately after a heading when a scene needs its own
-workflow state:
+  ```yaml
+  storyteller: scene
+  status: revision
+  pov: Penelope
+  location: Council hall
+  goal: Convince the council to leave
+  conflict: The storm closes the harbor
+  outcome: The council refuses
+  ```
+  ````
 
-````markdown
-## Scene 2 — The council refuses
-
-```yaml
-storyteller: scene
-status: revision
-pov: Penelope
-location: Council hall
-goal: Convince the council to leave
-conflict: The storm closes the harbor
-outcome: The council refuses
-tags:
-  - act-1
-```
-````
-
-Example chapter metadata:
-
-```yaml
----
-type: chapter
-pov: Odysseus
-location: Ithaca
-status: draft
-planning: flexible
-target: 5000
-chars:
-  - Odysseus
-locs:
-  - Ithaca
-tags:
-  - act2
----
-```
-
-Use `:StoryMeta` to edit this frontmatter in a scratch buffer.
-
-## Commands
-
-| Command | Purpose |
-| --- | --- |
-| `:StoryStatus` | Display project totals. |
-| `:StoryOutline` | Browse chapters with counts and targets. |
-| `:StoryScrivenings[!]` | Open the editable continuous manuscript; `!` rebuilds it. |
-| `:StoryMeta` | Edit current chapter metadata. |
-| `:StoryDetect` | Scan all scenes and link high-confidence references. |
-| `:StoryDetectScene` | Review suggestions for the scene under the cursor. |
-| `:StoryReferences` | Browse reference cards. |
-| `:StoryCorkboard [filter]` | Review scene cards; optionally filter their text. |
-| `:StoryCollection` | Filter scenes by metadata, tags, or unfinished beats. |
-| `:StoryCollectionAdd` / `:StoryCollections` | Maintain named, in-memory scene lists. |
-| `:StoryTargets` | Open the project targets dashboard. |
-| `:StorySessionStart` / `:StorySessionEnd` | Track a writing session. |
-| `:StoryProgress` | Update today's entry in `progress.log`. |
-| `:StorySnapshot [message]` | Commit a git snapshot or copy a non-git snapshot. |
-| `:StorySnapshots` | List snapshots. |
-| `:StoryTemplate` | Scaffold a bundled story structure. |
-| `:StoryExport [docx\|epub\|pdf\|smf]` | Export the compiled manuscript through Pandoc. |
-| `:StoryExportAll [docx\|epub\|pdf\|smf]` | Export each chapter through Pandoc. |
-| `:StoryScenePick` / `:StorySceneNext` / `:StoryScenePrevious` | Navigate scene units. |
-| `:StoryContinuity [field=value]` | Review scene POV, location, time, and state. |
-| `:StoryRevision [git-ref]` | Review revision scenes, open tasks, and Git changes. |
-| `:StoryContext` | Open an optional drafting context split. |
-| `:StoryIdea` / `:StoryDiscoveries` | Capture and promote discovery ideas. |
-| `:StoryResume` | Return to the last recorded scene. |
-
-The nixvim writing integration assigns the common commands to `<leader>s`:
-
-| Key | Purpose |
-| --- | --- |
-| `<leader>so` | Outline |
-| `<leader>ss` | Scrivenings |
-| `<leader>sr` | References |
-| `<leader>sd` | Detect references in current scene |
-| `<leader>sb` | Corkboard |
-| `<leader>st` | Targets |
-| `<leader>sn` | Snapshot |
-| `<leader>sx` | Export |
-| `<leader>sT` | Template |
+- Chapter frontmatter holds shared defaults (`status`, `target`, `tags`).
+- Files or folders beginning with `_` are excluded from indexing and export.
 
 ## Reference Detection
 
-Put one card per entity in the matching references directory. The title can be
-an H1 or H2; aliases belong in `names` frontmatter:
+Put one card per entity in the matching references directory, with a title and
+a `names:` alias list. `:Story detect` scans the project; `:Story detect
+scene` reviews suggestions for the scene under the cursor. Detection is
+case-insensitive, matches one-to-three-word phrases, and links high-confidence
+matches conservatively.
 
-```markdown
----
-names:
-  - Odysseus
-  - Ody
----
+## Text Interaction
 
-## Odysseus
-```
+Select a name in visual mode and press `<leader>sr` (or run
+`:Story capture [character|location|item|organization]`) to create a reference
+card for it — the selected prose is left untouched and the new card opens for
+editing.
 
-Detection is case-insensitive and checks one-to-three-word phrases. Full names
-are high confidence; a character first name is considered only when it is
-unique among the project's references. Dismissed suggestions are retained in
-the chapter's `ignore` metadata so they are not repeatedly offered.
+## Language Server
+
+Storyteller ships a prose-aware language server (Rust/tower-lsp) that replaces
+markdown-oxide for writing projects. It resolves bare character, location, item,
+and organization names in prose — no `[[wikilinks]]` needed — powering:
+
+- `gd` → open the reference card for the name under the cursor
+- `K` / hover → card summary
+- `gr` → every mention across chapters
+- completion → names, POV values, and status enums
+- `<leader>o` → document outline (scene headings)
+- code actions → create a reference card for an unknown name
+
+The nixvim writing module wires it automatically when `storyteller.lspPackage`
+is set; the standalone Nixvim module exposes `storyteller.lsp.package`.
 
 ## Installation Outside The Template
 
@@ -208,9 +186,6 @@ The standalone `storytelling.nvim` Nixvim module uses the independent
 `storyteller.*` namespace instead, so it can be imported alongside the
 `nixvim_config` writing module without redeclaring `writing.storyteller.*`.
 
-See [the user guide](docs/user-guide.md) for the writing workflow and
-[`PLAN.md`](PLAN.md) for the technical roadmap.
-
 ## Development Checks
 
 Run the dependency-free regression suite with a recent Neovim:
@@ -220,8 +195,9 @@ nvim --headless -u NONE -l tests/storyteller_spec.lua
 ```
 
 It covers marker-only project discovery, explicit setup precedence, safe
-frontmatter mutation, multi-day progress accounting, Scrivenings source-buffer
-synchronization, and frontmatter-free export composition.
+frontmatter mutation, scene indexing and word counts, multi-day progress
+accounting, Scrivenings write-back synchronization and conflict protection,
+frontmatter-free export, and inline-metadata migration.
 
 VHS demos are reproducible from [`docs/vhs/`](docs/vhs/README.md).
 
@@ -234,15 +210,19 @@ affiliated with, endorsed by, or a replacement for the projects below.
   the binder, outliner, corkboard, targets, snapshots, compilation, and
   Scrivenings-style whole-manuscript editing goals.
 - [Kindling](https://kindlingwriter.com/features) inspired the rolling outline,
-  reference-aware drafting, discovery-oriented planning, and the conservative
-  non-AI reference-detection model. Its open-source implementation was useful
-  research for the name-indexing and phrase-matching approach.
+  reference-aware drafting, and the conservative non-AI reference-detection
+  model.
 - [yWriter](https://www.spacejock.com/yWriter.html) reinforced the value of a
   chapter/scene/reference workflow for novelists.
 - [obsidian.nvim](https://github.com/obsidian-nvim/obsidian.nvim),
   [markdown-oxide](https://github.com/Feel-ix-343/markdown-oxide), and
   [Neorg](https://github.com/nvim-neorg/neorg) informed the workspace,
-  Markdown-linking, picker-integration, and modular-Neovim design.
+  Markdown-linking, and modular-Neovim design.
+- [triforce.nvim](https://github.com/gisketch/triforce.nvim) inspired the
+  tracking dashboard (activity heatmap, streaks, milestones).
+- [morph.nvim](https://github.com/jrop/morph.nvim) is vendored as the
+  reactive rendering library; [nui.nvim](https://github.com/MunifTanjim/nui.nvim)
+  is the optional window/layout dependency.
 
 Storyteller stores its own data model in plain Markdown and YAML frontmatter;
 it does not import, copy, or depend on those applications' proprietary project

@@ -7,18 +7,27 @@ CONTENTS                                                         *storyteller*
   2. Requirements............|storyteller-requirements|
   3. Commands...............|storyteller-commands|
   4. Options................|storyteller-options|
+  5. Project model...........|storyteller-model|
 
 ==============================================================================
 1. INTRODUCTION                                       *storyteller-intro*
 
 Storyteller turns a Markdown writing project into a Scrivener/Kindling-class
-novel-writing environment: live per-chapter word counts and targets, two-way
-"scrivenings" compiling and editing, reference auto-detection, a corkboard,
-collections, snapshots, and pandoc export.
+novel-writing environment, organized around five pillars:
 
-The on-disk format mirrors the nixvim_config `storytelling` template:
-chapters/ (one file per chapter, `## Scene` blocks), references/ cards, an
-outline/, and frontmatter metadata on each file.
+  - Metadata:   a single scene-centric schema (scene YAML blocks + chapter
+                frontmatter), with inline `- **Key:**` migration.
+  - Compilation: a metadata-free longform manuscript, an editable two-way
+                "Scrivenings" view, and Pandoc export.
+  - Tracking:   sessions, a daily progress log, a heatmap, streaks, and
+                milestones.
+  - Templating: bundled story structures (three-act, hero's journey, etc.).
+  - UI:         a buffer-first workspace with a binder, corkboard, outliner,
+                inspector, and dashboard.
+
+Storyteller also ships a prose-aware language server (Rust/tower-lsp) that
+resolves bare character/location names in prose for `gd`, hover, references,
+and completion — replacing markdown-oxide.
 
     require("storyteller").setup({})
 
@@ -27,27 +36,47 @@ outline/, and frontmatter metadata on each file.
 
 Core plugin: Neovim 0.9+, zero hard dependencies (pure Lua + nvim API).
 
-Optional (auto-detected, recommended):
+Optional (auto-detected):
   - telescope.nvim   (picker backend, default when present)
   - fzf-lua          (alternate picker backend)
-  - lualine.nvim     (statusline sections, Phase 1+)
+  - nui.nvim         (UI dependency; views fall back to plain buffers without it)
   - rg               (faster indexing; falls back to |glob()|)
-  - pandoc           (export, Phase 5)
+  - pandoc           (export)
   - which-key.nvim   (keybinding hints)
 
 ==============================================================================
 3. COMMANDS                                            *storyteller-commands*
 
-Phase 0 provides:
+A single `:Story` command with subcommand-style arguments and completion:
 
-:StoryStatus        Show a summary of the project (chapters/scenes/words).
-:StoryOutline       Fuzzy-pick a chapter by title + word count, open it.
+  :Story                  open the dashboard
+  :Story outline          chapter outline with word counts and targets
+  :Story scenes           pick a scene
+  :Story next|prev        move between scenes
+  :Story corkboard [q]    review scene cards (optionally filtered by text)
+  :Story resume           return to the last visited scene
+  :Story meta             edit the current scene's metadata
+  :Story status [s]       set (or cycle) the current scene status
+  :Story migrate          rewrite inline `- **Key:**` bullets as scene YAML
+  :Story compile[!]       open the editable continuous manuscript (`!` rebuilds)
+  :Story manuscript       write build/manuscript.md (metadata-free)
+  :Story track            open the tracking dashboard
+  :Story session start|end  track a writing session
+  :Story snapshot [msg]   create a safety snapshot
+  :Story references       browse reference cards
+  :Story capture [type]   create a reference card from a visual selection
+  :Story detect [scene]   detect and link references
+  :Story idea             capture an idea into research/ideas.md
+  :Story ideas            open the ideas inbox
+  :Story template [name]  apply a story structure (with preview)
+  :Story export [fmt]     export the manuscript (docx/epub/pdf/smf)
+  :Story export all [fmt] export each chapter
+  :Story snapshots        list git snapshots
+  :Story workspace        toggle the binder + inspector workspace
+  :Story palette          command palette
 
-Phase 1+ adds (planned): Outline (interactive), Scrivenings, Detect,
-References, Corkboard, Targets, Collections, Snapshot, Template, Export.
-
-Commands are registered by the platforms (F)ication simply; see
-|storyteller-options| to tweak behavior.
+The default keymaps put these under `<leader>s` (see `:Story palette` and
+which-key's "Story" group).
 
 ==============================================================================
 4. OPTIONS                                          *storyteller-options*
@@ -55,12 +84,35 @@ Commands are registered by the platforms (F)ication simply; see
 Passed to `setup({...})`:
 
   markers          List of root-marker names used to find a project.
+  templates_dir    Optional override dir for story-structure templates.
   autocmds         Boolean; enable FileType/BufWritePost autocmds.
-  picker           "auto"|"telescope"|"fzf"|"minipick".
+  picker           "auto"|"telescope"|"fzf".
+  ui               "auto"|"morph"|"nui"|"buffer".
   detect_on_save   Boolean; auto-run reference detection after save.
   detect_debounce  ms debounce for detection.
+  heatmap_weeks    Weeks shown in the tracking dashboard heatmap.
+  rg               path to ripgrep (or nil).
+  pandoc           path to pandoc (or nil).
 
 See `lua/storyteller/config.lua` for defaults.
+
+==============================================================================
+5. PROJECT MODEL                                       *storyteller-model*
+
+A project is any directory with `chapters/` (one Markdown file per chapter,
+`## ` scene headings) or `references/`, or an explicit `.storyteller` marker.
+
+Scene metadata lives in a YAML block directly below the heading:
+
+    ```yaml
+    storyteller: scene
+    status: draft
+    pov: Odysseus
+    location: Ithaca
+    ```
+
+Chapter frontmatter holds shared defaults (status, target, tags). Files and
+directories beginning with `_` are excluded from indexing and export.
 
 ==============================================================================
  vim:tw=78:ts=8:ft=help:norl:

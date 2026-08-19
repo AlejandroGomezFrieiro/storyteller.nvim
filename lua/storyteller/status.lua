@@ -1,18 +1,17 @@
 -- storyteller.status
--- Pure data for statusline/lualine consumption (Phase 1).
---   status.context(bufnr) -> { scene_words, chapter_words, target, pct, scene_title }
+-- Pure data for statusline/lualine consumption.
+--   status.context(bufnr) -> { scene_words, chapter_words, target, pct }
 --   status.render()       -> short formatted string for a statusline component
 --
--- Reading only the *current buffer* (no disk I/O) so it's cheap enough for
+-- Reads only the current buffer (no project-wide scan) so it stays cheap for
 -- the statusline's frequent ticks.
 
 local M = {}
 local project = require("storyteller.project")
-local scene_data = require("storyteller.scene")
 local index = require("storyteller.index")
+local meta = require("storyteller.meta")
 
 local function parse_target(lines)
-  -- 1. frontmatter `target: 5000`
   if lines[1] == "---" then
     for i = 2, #lines do
       local t = lines[i]:match("^target:%s*(%d+)")
@@ -24,7 +23,6 @@ local function parse_target(lines)
       end
     end
   end
-  -- 2. `# Target: N` or `> Target: N`
   for _, ln in ipairs(lines) do
     local t = ln:match("^%s*[#>*]%s*Target:%s*(%d+)")
     if t then
@@ -34,46 +32,39 @@ local function parse_target(lines)
   return nil
 end
 
--- Full chapter word count for the buffer (all prose lines).
-
 M.context = function(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   local target = parse_target(lines)
 
-  local active_scene
-  if bufnr == vim.api.nvim_get_current_buf() then
-    local prj = project.current()
-    if prj then
-      active_scene = scene_data.current(prj)
-      if active_scene then
-        target = scene_data.from_index(active_scene).meta.target or target
-      end
-    end
+  local prj = project.current()
+  local active_scene = prj and index.current_scene(prj) or nil
+  if active_scene then
+    target = meta.field(active_scene, "target", target)
   end
 
-  -- current scene = word count from the nearest preceding `## ` heading
-  local cursor = vim.api.nvim_win_get_cursor(0)[1] -- 1-based
   local scene_words = active_scene and index.scene_words(active_scene) or 0
-  local start_line = nil
-  local end_line = nil
-  for i = 1, #lines do
-    if lines[i]:match("^##%s+") then
-      if start_line == nil then
+  if not active_scene then
+    local cursor = vim.api.nvim_win_get_cursor(0)[1]
+    local start_line, end_line
+    for i = 1, #lines do
+      if lines[i]:match("^##%s+") then
+        if start_line == nil then
+          start_line = i
+        end
+        if i > cursor then
+          end_line = i - 1
+          break
+        end
         start_line = i
       end
-      if i > cursor then
-        end_line = i - 1
-        break
-      end
-      start_line = i
     end
-  end
-  if not active_scene and start_line then
-    end_line = end_line or #lines
-    local body = table.concat(vim.list_slice(lines, start_line, end_line), " ")
-    for _ in body:gmatch("%S+") do
-      scene_words = scene_words + 1
+    if start_line then
+      end_line = end_line or #lines
+      local body = table.concat(vim.list_slice(lines, start_line, end_line), " ")
+      for _ in body:gmatch("%S+") do
+        scene_words = scene_words + 1
+      end
     end
   end
 
@@ -86,7 +77,6 @@ M.context = function(bufnr)
   }
 end
 
--- Short, human string for a statusline slot. e.g. `·wokay` -> `1.2k/5k (24%)`
 M.render = function()
   local c = M.context()
   if not c then
@@ -94,12 +84,12 @@ M.render = function()
   end
   local parts = {}
   if c.scene_words > 0 then
-    table.insert(parts, ("⚑ %s"):format(c.scene_words))
+    parts[#parts + 1] = ("⚑ %s"):format(c.scene_words)
   end
   if c.target then
-    table.insert(parts, ("%s/%s (%s%%)"):format(c.chapter_words, c.target, c.pct or 0))
+    parts[#parts + 1] = ("%s/%s (%s%%)"):format(c.chapter_words, c.target, c.pct or 0)
   else
-    table.insert(parts, tostring(c.chapter_words))
+    parts[#parts + 1] = tostring(c.chapter_words)
   end
   return table.concat(parts, " ")
 end

@@ -1,26 +1,19 @@
 -- storyteller.events
--- Autocmd wiring: associate buffers with the project, optional detect-on-save,
--- live outline word counts.
+-- Autocmd wiring: associate buffers with the project, remember the last scene,
+-- and (optionally) auto-detect references on save.
 
 local project = require("storyteller.project")
 local config = require("storyteller.config")
-local outline = require("storyteller.outline")
 local resume = require("storyteller.resume")
 
 local M = {}
 
--- Re-resolve project for the buffer so renames/dir changes are picked up.
 local function attach(bufnr)
   local file = vim.api.nvim_buf_get_name(bufnr)
   if file == "" or vim.bo[bufnr].buftype ~= "" then
     return
   end
-  -- touch the project resolution (caches per-buffer via a separate module)
   vim.b[bufnr].storyteller_project = project.resolve(file)
-  -- live word counts on markdown headings
-  if vim.bo[bufnr].ft == "markdown" then
-    outline.setup_buffer(bufnr)
-  end
 end
 
 M.setup = function()
@@ -54,10 +47,6 @@ M.setup = function()
         if not vim.b[ev.buf].storyteller_project then
           return
         end
-        -- Debounced auto-detect for the scene just saved: auto-link confident
-        -- matches (confidence >= 0.9), the conservative Kindling-style default.
-        -- Capture this write's location before the debounce timer runs. The
-        -- user may move to a different scene or buffer before it fires.
         local line = vim.api.nvim_win_get_cursor(0)[1]
         if timers[ev.buf] then
           vim.fn.timer_stop(timers[ev.buf])

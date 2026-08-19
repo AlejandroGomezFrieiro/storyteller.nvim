@@ -3,6 +3,60 @@
 A Scrivener/Kindling-class novel-writing engine for Neovim over Markdown.
 Log of implementation work against the plan in `PLAN.md`.
 
+> **Redesign (0.2.0).** The plugin was restructured around five pillars
+> (metadata, compilation, tracking, templating, UI). The phase-based module
+> layout was replaced by cohesive feature modules; the command surface moved to
+> a single `:Story` command with subcommands. Details are tracked below under
+> "Redesign".
+
+---
+
+## Redesign (0.2.0)
+- [x] `schema.lua` — single source of truth for metadata vocabulary (fields,
+      statuses, list/enum typing).
+- [x] `meta/{serde,read,write}.lua` — unified metadata layer; scene-centric
+      schema with chapter-frontmatter defaults; inline `- **Key:**` migration.
+- [x] `index.lua` refactored onto the schema; adds `current_scene`/`open_scene`.
+- [x] `compile.lua` — unified metadata-free longform + two-way Scrivenings +
+      Pandoc export (replaces `scrivenings.lua` + `export.lua`).
+- [x] `track.lua` — sessions, progress log, heatmap, streaks, milestones
+      (replaces `target.lua`).
+- [x] `commands.lua` — `:Story <subcommand>` dispatch + completion.
+- [x] `ui/{init,views,dashboard,workspace,meta_form}.lua` — buffer-first,
+      Scrivener-style views with a single highlight palette.
+- [x] Vendored `morph.nvim` (pinned single file) under `lua/storyteller/morph/`.
+- [x] `nui.nvim` declared as an optional dependency (flake + nixvim module).
+- [x] Removed phase files and the now-folded `metadata`, `scene`, `scrivenings`,
+      `export`, `target`, `outline`, `corkboard`, `collections`, `workflow`,
+      `view`, and `command` modules.
+- [x] Regression suite rewritten; 23/23 checks pass headlessly.
+
+---
+
+## Redesign round 2 (UI + LSP)
+
+- [x] `capture.lua` — extract-to-reference: create a reference card from a
+      visual selection (or `<cword>`), file + open only.
+- [x] `ideas.lua` — project ideas inbox in `research/ideas.md`
+      (`:Story idea` / `:Story ideas`).
+- [x] `snapshot.lua` — git-only snapshots; non-git prompts to `git init`,
+      never creates files. `:Story snapshots` lists commits.
+- [x] `ui/init.lua` morph renderer — views render via vendored morph.nvim when
+      available, with a plain-buffer fallback (verified headlessly).
+- [x] `ui/views.lua` template preview (`templates.plan` → confirmable view).
+- [x] `ui/workspace.lua` toggle open/close with window tracking.
+- [x] `meta/read.lua` mtime cache + `index.scenes` unified onto `meta` resolution.
+- [x] nixvim_config: lualine word-count wiring; drop `:WritingExport`.
+- [x] `schema.json` — shared canonical schema; `server/` Rust crate
+      (tower-lsp) with hover/definition/references/completion/document-symbols
+      and create-card code actions; bare-name resolution, no wikilinks.
+- [x] flake packages `storyteller-lsp`; nixvim_config wires it via
+      `vim.lsp.config`, replacing markdown-oxide in the writing module.
+- [x] Regression suite extended; 49/49 checks pass headlessly; Rust crate
+      compiles and answers initialize/hover/definition/references over stdio.
+
+---
+
 ## Legend
 
 - `[x]` done · `[~]` in progress · `[ ]` planned
