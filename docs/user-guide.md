@@ -266,9 +266,15 @@ then matches them as you type or navigate.
 | Go to definition | `gd` | Open the reference card for the name under the cursor. |
 | Hover | `K` | Show the card summary (role, notes). |
 | References | `gr` | List every mention of the name across chapters. |
-| Completion | `tab`/`<C-n>` | Suggest character, location, item, and org names plus status enums while you type. |
+| Rename | `<leader>lr` | Rename the entity across its card and every mention. |
+| Completion | `tab`/`<C-n>` | Suggest character, location, item, and org names (and YAML fields/statuses) while you type. |
 | Document outline | `<leader>o` | List the scene headings in the current chapter. |
 | Code action | `<leader>la` | Create a reference card for an unknown name (character/location/item/org). |
+| Diagnostics | — | Hint at capitalized names with no card, and unused cards. |
+
+The server resolves **single- and multi-word** names ("Odysseus" as well as
+"Captain Greg") via the same 1–3-word n-gram matching as the plugin, and it
+re-indexes on save and on watched-file changes.
 
 Try it: open a chapter that mentions "Odysseus", place the cursor on the name,
 and press `K`, `gd`, then `gr`.

@@ -35,6 +35,18 @@ struct Backend {
     schema: Schema,
 }
 
+fn byte_to_utf16(line: &str, byte: usize) -> u32 {
+    let byte = byte.min(line.len());
+    let mut count = 0u32;
+    for (i, c) in line.char_indices() {
+        if i >= byte {
+            break;
+        }
+        count += c.len_utf16() as u32;
+    }
+    count
+}
+
 impl Backend {
     fn new(client: Client) -> Self {
         let schema: Schema = serde_json::from_str(SCHEMA_JSON).unwrap_or(Schema {
@@ -66,14 +78,6 @@ impl Backend {
         }
     }
 
-    fn root_uri(&self) -> Option<Url> {
-        self.root
-            .read()
-            .unwrap()
-            .as_ref()
-            .and_then(|p| Url::from_file_path(p).ok())
-    }
-
     fn document_lines(&self, uri: &Url) -> Vec<String> {
         let key = uri.as_str().to_string();
         if let Some(text) = self.docs.read().unwrap().get(&key) {
@@ -87,38 +91,15 @@ impl Backend {
         Vec::new()
     }
 
-    fn word_at_utf16(&self, line: &str, character: u32) -> Option<String> {
-        let chars: Vec<char> = line.chars().collect();
-        if chars.is_empty() {
-            return None;
-        }
-        // Map a UTF-16 column to a char index (the char at/after that offset).
-        let mut u = 0usize;
-        let mut idx = chars.len();
-        for (i, c) in chars.iter().enumerate() {
-            if character as usize <= u {
-                idx = i;
-                break;
-            }
-            u += c.len_utf16();
-        }
-        let mut pos = idx.min(chars.len().saturating_sub(1));
-        let is_word = |c: char| c.is_alphanumeric() || c == '\'';
-        while pos > 0 && !is_word(chars[pos]) {
-            pos -= 1;
-        }
-        if !is_word(chars[pos]) {
-            return None;
-        }
-        let mut start = pos;
-        let mut end = pos;
-        while start > 0 && is_word(chars[start - 1]) {
-            start -= 1;
-        }
-        while end + 1 < chars.len() && is_word(chars[end + 1]) {
-            end += 1;
-        }
-        Some(chars[start..=end].iter().collect())
+    // Resolve the name under a position (byte range included). Returns
+    // (entry, start_byte, end_byte).
+    fn resolve_pos(&self, uri: &Url, position: Position) -> Option<(index::NameEntry, usize, usize)> {
+        let lines = self.document_lines(uri);
+        let line = lines.get(position.line as usize)?;
+        let byte = utf16_to_byte(line, position.character);
+        let idx = self.index.read().unwrap();
+        let (entry, (start, end)) = index::resolve_at(&idx, line, byte)?;
+        Some((entry.clone(), start, end))
     }
 
     fn card_content(&self, rtype: &str, name: &str) -> String {
@@ -150,6 +131,107 @@ impl Backend {
         };
         Url::from_file_path(root.join("references").join(dir).join(format!("{slug}.md"))).ok()
     }
+
+    // Publish story diagnostics for every chapter and reference card.
+    async fn publish_diagnostics(&self) {
+        let to_publish: Vec<(Url, Vec<Diagnostic>)> = {
+            let idx = self.index.read().unwrap();
+            let mut out = Vec::new();
+            for ch in &idx.chapters {
+                let uri = match Url::from_file_path(&ch.path) {
+                    Ok(u) => u,
+                    Err(_) => continue,
+                };
+                let text = self
+                    .docs
+                    .read()
+                    .unwrap()
+                    .get(uri.as_str())
+                    .cloned()
+                    .unwrap_or_else(|| std::fs::read_to_string(&ch.path).unwrap_or_default());
+                let mut diags = Vec::new();
+                for (li, byte, word) in index::unknown_names(&idx, &text) {
+                    let line = text.lines().nth(li).unwrap_or("");
+                    let start = Position::new(li as u32, byte_to_utf16(line, byte));
+                    let end = Position::new(li as u32, byte_to_utf16(line, byte + word.len()));
+                    diags.push(Diagnostic {
+                        range: Range::new(start, end),
+                        severity: Some(DiagnosticSeverity::HINT),
+                        source: Some("storyteller".into()),
+                        message: format!("No reference card for “{word}” — run a code action to create one."),
+                        ..Default::default()
+                    });
+                }
+                out.push((uri, diags));
+            }
+
+            for card in &idx.cards {
+                if index::mention_count(&idx, card) == 0 {
+                    if let Ok(uri) = Url::from_file_path(&card.path) {
+                        let diag = Diagnostic {
+                            range: Range::new(Position::new(0, 0), Position::new(0, 0)),
+                            severity: Some(DiagnosticSeverity::HINT),
+                            source: Some("storyteller".into()),
+                            message: format!("“{}” is never mentioned in the manuscript.", card.name),
+                            ..Default::default()
+                        };
+                        out.push((uri, vec![diag]));
+                    }
+                }
+            }
+            out
+        };
+
+        for (uri, diags) in to_publish {
+            self.client.publish_diagnostics(uri, diags, None).await;
+        }
+    }
+
+    // Is the line inside a YAML block (frontmatter or ```yaml)?
+    fn in_yaml(&self, lines: &[String], line: usize) -> bool {
+        let mut in_fm = false;
+        let mut in_block = false;
+        for (i, l) in lines.iter().enumerate() {
+            let t = l.trim();
+            if i > line {
+                break;
+            }
+            if t == "---" && !in_block {
+                in_fm = !in_fm;
+                continue;
+            }
+            if t == "```yaml" {
+                in_block = true;
+                continue;
+            }
+            if t == "```" && in_block {
+                in_block = false;
+                continue;
+            }
+        }
+        in_fm || in_block
+    }
+
+    fn field_on_line(line: &str) -> Option<String> {
+        let t = line.trim_start();
+        let colon = t.find(':')?;
+        let key = t[..colon].trim();
+        if key.is_empty() {
+            return None;
+        }
+        Some(key.to_string())
+    }
+}
+
+fn utf16_to_byte(line: &str, character: u32) -> usize {
+    let mut u = 0u32;
+    for (i, c) in line.char_indices() {
+        if u >= character {
+            return i;
+        }
+        u += c.len_utf16() as u32;
+    }
+    line.len()
 }
 
 #[tower_lsp::async_trait]
@@ -179,6 +261,7 @@ impl LanguageServer for Backend {
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
+                rename_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 completion_provider: Some(CompletionOptions {
                     resolve_provider: Some(false),
@@ -191,6 +274,10 @@ impl LanguageServer for Backend {
         })
     }
 
+    async fn initialized(&self, _params: InitializedParams) {
+        self.publish_diagnostics().await;
+    }
+
     async fn shutdown(&self) -> Result<()> {
         Ok(())
     }
@@ -201,6 +288,8 @@ impl LanguageServer for Backend {
             .write()
             .unwrap()
             .insert(uri.as_str().to_string(), params.text_document.text);
+        self.rescan();
+        self.publish_diagnostics().await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -214,47 +303,40 @@ impl LanguageServer for Backend {
 
     async fn did_save(&self, _params: DidSaveTextDocumentParams) {
         self.rescan();
+        self.publish_diagnostics().await;
+    }
+
+    async fn did_change_watched_files(&self, _params: DidChangeWatchedFilesParams) {
+        self.rescan();
+        self.publish_diagnostics().await;
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let lines = self.document_lines(&uri);
-        let line = lines.get(pos.line as usize).cloned().unwrap_or_default();
-        let word = match self.word_at_utf16(&line, pos.character) {
-            Some(w) => w,
+        let (entry, start, end) = match self.resolve_pos(&uri, pos) {
+            Some(r) => r,
             None => return Ok(None),
         };
-
-        let entries = {
-            let idx = self.index.read().unwrap();
-            index::resolve(&idx, &word)
-        };
-        let entry = match entries.into_iter().max_by(|a, b| {
-            a.confidence.partial_cmp(&b.confidence).unwrap()
-        }) {
-            Some(e) => e,
-            None => return Ok(None),
-        };
+        let line = self.document_lines(&uri).get(pos.line as usize).cloned().unwrap_or_default();
 
         let mut parts = vec![format!("**{}** — {}", entry.name, entry.rtype)];
         let idx = self.index.read().unwrap();
-        if let Some(card) = idx
-            .cards
-            .iter()
-            .find(|c| c.path == entry.path)
-        {
+        if let Some(card) = idx.cards.iter().find(|c| c.path == entry.path) {
             for s in &card.summary {
                 parts.push(s.clone());
             }
         }
-        let contents = HoverContents::Markup(MarkupContent {
-            kind: MarkupKind::Markdown,
-            value: parts.join("\n\n"),
-        });
+        let range = Range::new(
+            Position::new(pos.line, byte_to_utf16(&line, start)),
+            Position::new(pos.line, byte_to_utf16(&line, end)),
+        );
         Ok(Some(Hover {
-            contents,
-            range: None,
+            contents: HoverContents::Markup(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: parts.join("\n\n"),
+            }),
+            range: Some(range),
         }))
     }
 
@@ -264,18 +346,8 @@ impl LanguageServer for Backend {
     ) -> Result<Option<GotoDefinitionResponse>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let lines = self.document_lines(&uri);
-        let line = lines.get(pos.line as usize).cloned().unwrap_or_default();
-        let word = match self.word_at_utf16(&line, pos.character) {
-            Some(w) => w,
-            None => return Ok(None),
-        };
-        let idx = self.index.read().unwrap();
-        let entry = index::resolve(&idx, &word)
-            .into_iter()
-            .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap());
-        let entry = match entry {
-            Some(e) => e,
+        let (entry, _, _) = match self.resolve_pos(&uri, pos) {
+            Some(r) => r,
             None => return Ok(None),
         };
         let target = Url::from_file_path(&entry.path).ok();
@@ -288,41 +360,33 @@ impl LanguageServer for Backend {
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
-        let lines = self.document_lines(&uri);
-        let line = lines.get(pos.line as usize).cloned().unwrap_or_default();
-        let word = match self.word_at_utf16(&line, pos.character) {
-            Some(w) => w,
+        let (entry, _, _) = match self.resolve_pos(&uri, pos) {
+            Some(r) => r,
             None => return Ok(None),
         };
+
         let idx = self.index.read().unwrap();
-        let entry = index::resolve(&idx, &word)
-            .into_iter()
-            .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap());
-        let entry = match entry {
-            Some(e) => e,
-            None => return Ok(None),
-        };
+        // Match the whole alias set, not just the primary name.
+        let card = idx.cards.iter().find(|c| c.path == entry.path);
+        let aliases: Vec<String> = card
+            .map(|c| c.aliases.iter().map(|a| a.to_lowercase()).collect())
+            .unwrap_or_else(|| vec![entry.name.to_lowercase()]);
+        let alias_set: std::collections::HashSet<&String> = aliases.iter().collect();
 
         let mut locations = Vec::new();
         for chapter in &idx.chapters {
             if let Ok(text) = std::fs::read_to_string(&chapter.path) {
                 for (i, l) in text.lines().enumerate() {
-                    let mut byte = 0usize;
-                    for w in l.split(|c: char| !(c.is_alphanumeric() || c == '\'')) {
-                        if w.eq_ignore_ascii_case(&entry.name) {
-                            if let Some(start) = l[byte..].find(w) {
-                                let col = byte + start;
-                                locations.push(Location {
-                                    uri: Url::from_file_path(&chapter.path)
-                                        .unwrap_or_else(|_| uri.clone()),
-                                    range: Range::new(
-                                        Position::new(i as u32, col as u32),
-                                        Position::new(i as u32, (col + w.len()) as u32),
-                                    ),
-                                });
-                            }
+                    for t in index::tokenize(l) {
+                        if alias_set.contains(&t.word.to_lowercase()) {
+                            locations.push(Location {
+                                uri: Url::from_file_path(&chapter.path).unwrap_or_else(|_| uri.clone()),
+                                range: Range::new(
+                                    Position::new(i as u32, byte_to_utf16(l, t.start)),
+                                    Position::new(i as u32, byte_to_utf16(l, t.end)),
+                                ),
+                            });
                         }
-                        byte += w.len() + 1;
                     }
                 }
             }
@@ -330,34 +394,93 @@ impl LanguageServer for Backend {
         Ok(Some(locations))
     }
 
-    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let mut items: Vec<CompletionItem> = Vec::new();
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let uri = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+        let (entry, _, _) = match self.resolve_pos(&uri, pos) {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+        let new_name = params.new_name.trim();
+        if new_name.is_empty() || new_name == entry.name {
+            return Ok(None);
+        }
+
         let idx = self.index.read().unwrap();
-        let mut seen = std::collections::HashSet::new();
-        for card in &idx.cards {
-            for name in card.aliases.iter().chain(std::iter::once(&card.name)) {
-                let key = name.to_lowercase();
-                if seen.contains(&key) {
-                    continue;
+        let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
+        let mut files: Vec<PathBuf> = vec![entry.path.clone()];
+        for ch in &idx.chapters {
+            files.push(ch.path.clone());
+        }
+        for file in files {
+            if let Ok(text) = std::fs::read_to_string(&file) {
+                let replaced = text.replace(&entry.name, new_name);
+                if replaced != text {
+                    let line_count = text.lines().count() as u32;
+                    let end = Position::new(line_count.saturating_sub(1), 0);
+                    if let Ok(u) = Url::from_file_path(&file) {
+                        changes.entry(u).or_default().push(TextEdit {
+                            range: Range::new(Position::new(0, 0), end),
+                            new_text: replaced,
+                        });
+                    }
                 }
-                seen.insert(key);
-                items.push(CompletionItem {
-                    label: name.clone(),
-                    kind: Some(CompletionItemKind::REFERENCE),
-                    detail: Some(card.rtype.clone()),
-                    ..Default::default()
-                });
             }
         }
-        for status in &self.schema.statuses {
-            items.push(CompletionItem {
-                label: status.clone(),
-                kind: Some(CompletionItemKind::ENUM_MEMBER),
-                detail: Some("status".into()),
-                ..Default::default()
-            });
+        if changes.is_empty() {
+            return Ok(None);
         }
-        let _ = params;
+        Ok(Some(WorkspaceEdit {
+            changes: Some(changes),
+            document_changes: None,
+            change_annotations: None,
+        }))
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let uri = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+        let lines = self.document_lines(&uri);
+        let line = lines.get(pos.line as usize).cloned().unwrap_or_default();
+
+        let mut items: Vec<CompletionItem> = Vec::new();
+
+        if self.in_yaml(&lines, pos.line as usize) {
+            // YAML context: field names + values for the field on the line.
+            if let Some(field) = Self::field_on_line(&line) {
+                match field.as_str() {
+                    "status" => {
+                        for status in &self.schema.statuses {
+                            items.push(CompletionItem {
+                                label: status.clone(),
+                                kind: Some(CompletionItemKind::ENUM_MEMBER),
+                                detail: Some("status".into()),
+                                ..Default::default()
+                            });
+                        }
+                    }
+                    "pov" | "location" | "chars" | "locs" | "items" | "orgs" => {
+                        self.name_items(&mut items);
+                    }
+                    _ => {}
+                }
+            }
+            // Always offer field names.
+            let mut seen = std::collections::HashSet::new();
+            for field in self.schema.scene_fields.iter().chain(self.schema.chapter_fields.iter()) {
+                if seen.insert(field) {
+                    items.push(CompletionItem {
+                        label: field.clone(),
+                        kind: Some(CompletionItemKind::FIELD),
+                        ..Default::default()
+                    });
+                }
+            }
+        } else {
+            // Prose: suggest reference names.
+            self.name_items(&mut items);
+        }
+
         Ok(Some(CompletionResponse::Array(items)))
     }
 
@@ -393,7 +516,13 @@ impl LanguageServer for Backend {
         let pos = params.range.start;
         let lines = self.document_lines(&uri);
         let line = lines.get(pos.line as usize).cloned().unwrap_or_default();
-        let word = match self.word_at_utf16(&line, pos.character) {
+        let byte = utf16_to_byte(&line, pos.character);
+        let word = index::tokenize(&line)
+            .into_iter()
+            .find(|t| byte >= t.start && byte <= t.end)
+            .map(|t| t.word);
+
+        let word = match word {
             Some(w) => w,
             None => return Ok(None),
         };
@@ -402,16 +531,17 @@ impl LanguageServer for Backend {
         }
 
         let mut actions = Vec::new();
-        let types: Vec<(&str, &str)> = vec![
-            ("character", "Character"),
-            ("location", "Location"),
-            ("item", "Item"),
-            ("organization", "Organization"),
-        ];
-        for (rtype, label) in types {
+        let types = ["character", "location", "item", "organization"];
+        for rtype in types {
             let Some(new_uri) = self.card_uri(rtype, &word) else {
                 continue;
             };
+            let label = self
+                .schema
+                .reference_types
+                .get(rtype)
+                .map(|t| t.label.clone())
+                .unwrap_or_else(|| rtype.to_string());
             let content = self.card_content(rtype, &word);
             let edit = WorkspaceEdit {
                 changes: None,
@@ -422,7 +552,7 @@ impl LanguageServer for Backend {
                     },
                     edits: vec![OneOf::Left(TextEdit {
                         range: Range::default(),
-                        new_text: content.clone(),
+                        new_text: content,
                     })],
                 }])),
                 change_annotations: None,
@@ -435,6 +565,26 @@ impl LanguageServer for Backend {
             }));
         }
         Ok(Some(actions))
+    }
+}
+
+impl Backend {
+    fn name_items(&self, items: &mut Vec<CompletionItem>) {
+        let idx = self.index.read().unwrap();
+        let mut seen = std::collections::HashSet::new();
+        for card in &idx.cards {
+            for name in card.aliases.iter().chain(std::iter::once(&card.name)) {
+                let key = name.to_lowercase();
+                if seen.insert(key) {
+                    items.push(CompletionItem {
+                        label: name.clone(),
+                        kind: Some(CompletionItemKind::REFERENCE),
+                        detail: Some(card.rtype.clone()),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
     }
 }
 

@@ -4,11 +4,10 @@
 
 use crate::meta;
 use serde_yaml::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct RefCard {
     pub name: String,
     pub aliases: Vec<String>,
@@ -19,7 +18,6 @@ pub struct RefCard {
 }
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct Scene {
     pub path: PathBuf,
     pub title: String,
@@ -29,7 +27,6 @@ pub struct Scene {
 }
 
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct Chapter {
     pub path: PathBuf,
     pub title: String,
@@ -83,14 +80,12 @@ fn read_lines(path: &Path) -> Vec<String> {
 }
 
 fn chapter_title(h1: &str) -> (Option<u32>, String) {
-    // "Chapter N — Title" / "Chapter N: Title"
     let rest = h1
         .strip_prefix("Chapter ")
         .or_else(|| h1.strip_prefix("chapter "))
         .unwrap_or("");
-    let mut chars = rest.chars();
     let mut num = String::new();
-    for c in chars.by_ref() {
+    for c in rest.chars() {
         if c.is_ascii_digit() {
             num.push(c);
         } else {
@@ -130,7 +125,6 @@ fn parse_chapter(path: &Path) -> Option<Chapter> {
         }
     }
 
-    // target from frontmatter, else a `# Target: N` / `> Target: N` line.
     if let Some((fm, _)) = meta::parse_frontmatter(&lines) {
         if let Some(t) = fm.get("target").and_then(meta::value_to_string) {
             target = t.parse::<u32>().ok();
@@ -260,22 +254,52 @@ pub fn scan(root: &Path) -> Index {
             if dir.is_dir() {
                 for p in list_md(&dir) {
                     if let Some(card) = parse_card(&p, t) {
-                        let mut conf = 1.0;
-                        for a in &card.aliases {
-                            push_name(
-                                &mut index.names,
-                                a,
-                                NameEntry {
-                                    name: a.clone(),
-                                    path: card.path.clone(),
-                                    rtype: card.rtype.clone(),
-                                    confidence: conf,
-                                },
-                            );
-                            conf = 0.9;
-                        }
                         index.cards.push(card);
                     }
+                }
+            }
+        }
+    }
+
+    // First pass: full names + aliases; count character first-name frequency.
+    let mut first_counts: HashMap<String, usize> = HashMap::new();
+    for card in &index.cards {
+        if card.rtype == "characters" {
+            if let Some(first) = card.name.split_whitespace().next() {
+                *first_counts.entry(first.to_lowercase()).or_default() += 1;
+            }
+        }
+    }
+    for card in index.cards.clone() {
+        for (i, a) in card.aliases.iter().enumerate() {
+            let conf = if i == 0 { 1.0 } else { 0.9 };
+            push_name(
+                &mut index.names,
+                a,
+                NameEntry {
+                    name: a.clone(),
+                    path: card.path.clone(),
+                    rtype: card.rtype.clone(),
+                    confidence: conf,
+                },
+            );
+        }
+        // Unique first name for multi-word character names (confidence 0.7).
+        if card.rtype == "characters" {
+            let words: Vec<&str> = card.name.split_whitespace().collect();
+            if words.len() > 1 {
+                let first = words[0].to_lowercase();
+                if first_counts.get(&first).copied().unwrap_or(0) == 1 {
+                    push_name(
+                        &mut index.names,
+                        &first,
+                        NameEntry {
+                            name: words[0].to_string(),
+                            path: card.path.clone(),
+                            rtype: card.rtype.clone(),
+                            confidence: 0.7,
+                        },
+                    );
                 }
             }
         }
@@ -286,8 +310,224 @@ pub fn scan(root: &Path) -> Index {
 
 // --- Name resolution --------------------------------------------------------
 
-// Resolve the name (single word) under the cursor to a reference card.
+#[derive(Clone, Debug)]
+pub struct Token {
+    pub start: usize,
+    pub end: usize,
+    pub word: String,
+}
+
+pub fn tokenize(line: &str) -> Vec<Token> {
+    let mut out = Vec::new();
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = line[i..].chars().next().unwrap();
+        if c.is_alphanumeric() || c == '\'' {
+            let start = i;
+            while i < bytes.len() {
+                let ch = line[i..].chars().next().unwrap();
+                if ch.is_alphanumeric() || ch == '\'' {
+                    i += ch.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            out.push(Token {
+                start,
+                end: i,
+                word: line[start..i].to_string(),
+            });
+        } else {
+            i += c.len_utf8();
+        }
+    }
+    out
+}
+
+// Resolve a single word to reference entries.
 pub fn resolve(index: &Index, word: &str) -> Vec<NameEntry> {
     let w = word.trim().to_lowercase();
     index.names.get(&w).cloned().unwrap_or_default()
+}
+
+fn best(entries: &[NameEntry]) -> Option<&NameEntry> {
+    entries
+        .iter()
+        .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap())
+}
+
+// Resolve the name under a byte offset using 3-, 2-, and 1-word n-grams, so
+// multi-word names like "Captain Greg" resolve. Returns (entry, byte range).
+pub fn resolve_at<'a>(index: &'a Index, line: &str, cursor_byte: usize) -> Option<(&'a NameEntry, (usize, usize))> {
+    let tokens = tokenize(line);
+    if tokens.is_empty() {
+        return None;
+    }
+    let mut ti = None;
+    for (i, t) in tokens.iter().enumerate() {
+        if cursor_byte >= t.start && cursor_byte <= t.end {
+            ti = Some(i);
+            break;
+        }
+    }
+    let ti = match ti {
+        Some(i) => i,
+        None => {
+            // cursor past the last token: use the last token if it is the nearest word
+            if cursor_byte > tokens.last().unwrap().end {
+                tokens.len() - 1
+            } else {
+                return None;
+            }
+        }
+    };
+
+    for w in (1..=3usize).rev() {
+        for s in (0..=ti).rev() {
+            if s + w > tokens.len() {
+                continue;
+            }
+            if !(s <= ti && ti < s + w) {
+                continue;
+            }
+            let phrase: Vec<&str> = tokens[s..s + w].iter().map(|t| t.word.as_str()).collect();
+            let key = phrase.join(" ").to_lowercase();
+            if let Some(entries) = index.names.get(&key) {
+                if let Some(e) = best(entries) {
+                    let range = (tokens[s].start, tokens[s + w - 1].end);
+                    return Some((e, range));
+                }
+            }
+        }
+    }
+    None
+}
+
+// Every mention of any of a card's aliases across chapters.
+pub fn mentions(index: &Index, card: &RefCard) -> Vec<(PathBuf, u32, u32, u32)> {
+    let aliases: HashSet<String> = card.aliases.iter().map(|a| a.to_lowercase()).collect();
+    let mut out = Vec::new();
+    for ch in &index.chapters {
+        if let Ok(text) = std::fs::read_to_string(&ch.path) {
+            for (i, line) in text.lines().enumerate() {
+                for t in tokenize(line) {
+                    if aliases.contains(&t.word.to_lowercase()) {
+                        out.push((
+                            ch.path.clone(),
+                            i as u32,
+                            t.start as u32,
+                            t.end as u32,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+pub fn mention_count(index: &Index, card: &RefCard) -> usize {
+    mentions(index, card).len()
+}
+
+// Capitalized words in prose that look like names but have no card. Returns
+// (line, byte_start, word).
+pub fn unknown_names(index: &Index, text: &str) -> Vec<(usize, usize, String)> {
+    let stopwords: HashSet<&str> = [
+        "I", "The", "A", "An", "It", "Its", "He", "She", "They", "We", "You", "His", "Her",
+        "Their", "And", "But", "Or", "For", "Nor", "So", "Yet", "Then", "When", "While", "If",
+        "As", "At", "By", "In", "On", "To", "Of", "From", "With", "Without", "Into", "Over",
+        "Under", "Again", "Once", "Now", "There", "Here", "This", "That", "These", "Those",
+        "No", "Yes", "Not", "All", "Some", "Any", "Each", "Every", "Either", "Neither", "Both",
+        "My", "Our", "Your", "Mine", "Ours", "Day", "Night", "Morning", "Evening", "Chapter",
+        "Scene", "Part", "Act",
+    ]
+    .iter()
+    .copied()
+    .collect();
+
+    let mut out = Vec::new();
+    for (li, line) in text.lines().enumerate() {
+        let tokens = tokenize(line);
+        for (i, t) in tokens.iter().enumerate() {
+            let w = &t.word;
+            // proper-noun heuristic: first char uppercase, rest not all-caps.
+            let first = w.chars().next().unwrap_or(' ');
+            if !first.is_uppercase() {
+                continue;
+            }
+            if w.len() < 2 {
+                continue;
+            }
+            if !w.chars().skip(1).any(|c| c.is_lowercase()) {
+                continue; // ALLCAPS or acronym
+            }
+            if stopwords.contains(w.as_str()) {
+                continue;
+            }
+            // skip words at the very start of a sentence (after . ? ! : — or line start)
+            if i == 0 {
+                continue;
+            }
+            let prev = &tokens[i - 1];
+            if prev.word.ends_with(['.', '?', '!', ':', '—']) {
+                continue;
+            }
+            if resolve(index, w).is_empty() {
+                out.push((li, t.start, w.clone()));
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tokenizes_words() {
+        let toks = tokenize("Odysseus watched the harbor's lights.");
+        assert_eq!(toks[0].word, "Odysseus");
+        assert_eq!(toks[3].word, "harbor's");
+        assert_eq!(toks[3].start, "Odysseus watched the ".len());
+    }
+
+    #[test]
+    fn resolves_multi_word_names() {
+        let mut idx = Index::default();
+        push_name(
+            &mut idx.names,
+            "Captain Greg",
+            NameEntry {
+                name: "Captain Greg".into(),
+                path: PathBuf::from("/x.md"),
+                rtype: "characters".into(),
+                confidence: 1.0,
+            },
+        );
+        let line = "Captain Greg boarded the ship.";
+        let (entry, range) = resolve_at(&idx, line, "Captain G".len()).unwrap();
+        assert_eq!(entry.name, "Captain Greg");
+        assert_eq!(&line[range.0..range.1], "Captain Greg");
+    }
+
+    #[test]
+    fn resolves_single_word() {
+        let mut idx = Index::default();
+        push_name(
+            &mut idx.names,
+            "Odysseus",
+            NameEntry {
+                name: "Odysseus".into(),
+                path: PathBuf::from("/o.md"),
+                rtype: "characters".into(),
+                confidence: 1.0,
+            },
+        );
+        let line = "pov: Odysseus";
+        let (entry, _) = resolve_at(&idx, line, 6).unwrap();
+        assert_eq!(entry.name, "Odysseus");
+    }
 }

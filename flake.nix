@@ -32,7 +32,7 @@
         version = version;
         src = ./server;
         cargoLock = {lockFile = ./server/Cargo.lock;};
-        doCheck = false;
+        doCheck = true;
       };
     });
 
