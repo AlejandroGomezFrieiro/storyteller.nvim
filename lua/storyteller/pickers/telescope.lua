@@ -61,7 +61,7 @@ M.pick_list = function(entries, opts)
     prompt_title = opts.prompt_title or "Storyteller",
     results_title = opts.results_title,
     finder = finders.new_table({ results = results }),
-    sorter = sorters.get_fuzzy_sorter({}),
+    sorter = sorters.get_generic_fuzzy_sorter({}),
     attach_mappings = function(prompt_bufnr)
       actions.select_default:replace(function()
         local entry = state.get_selected_entry()
