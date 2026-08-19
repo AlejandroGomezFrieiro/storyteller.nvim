@@ -78,6 +78,20 @@ A single `:Story` command with subcommand-style arguments and completion:
 | `:Story compile[!]` | Open the editable continuous manuscript. |
 | `:Story manuscript` | Write `build/manuscript.md` (metadata-free). |
 | `:Story track` | Open the tracking dashboard. |
+
+## Demo
+
+The prose-aware language server turns bare names into navigation, completion,
+and code actions (here, hover + definition + references on an alias, and
+creating a card for a name the scene has not yet carded):
+
+![LSP navigation](docs/assets/05-lsp-navigation.gif)
+
+The dashboard, corkboard, and editable Scrivenings view are one keystroke away:
+
+![Overview](docs/assets/storyteller.gif)
+
+Every GIF is reproducible from [`docs/vhs/`](docs/vhs/README.md).
 | `:Story session start\|end` | Track a writing session. |
 | `:Story snapshot [message]` | Create a safety snapshot. |
 | `:Story references` | Browse reference cards. |

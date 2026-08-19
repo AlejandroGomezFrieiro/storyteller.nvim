@@ -1,4 +1,4 @@
-Output docs/assets/01-corkboard.gif
+Output docs/assets/04-track.gif
 
 Set Shell "bash"
 Set FontSize 18
@@ -10,10 +10,8 @@ Set Theme "Catppuccin Frappe"
 Type "nvim -u docs/vhs/demo-init.lua docs/vhs/demo/chapters/01_the_harbor.md"
 Enter
 Sleep 2s
-Type ":StoryCorkboard"
+Type ":Story track"
 Enter
-Sleep 3s
-Type "R"
-Sleep 2s
+Sleep 4s
 Type ":qa!"
 Enter

@@ -1,4 +1,4 @@
-Output docs/assets/03-targets.gif
+Output docs/assets/03-scrivenings.gif
 
 Set Shell "bash"
 Set FontSize 18
@@ -10,7 +10,7 @@ Set Theme "Catppuccin Frappe"
 Type "nvim -u docs/vhs/demo-init.lua docs/vhs/demo/chapters/01_the_harbor.md"
 Enter
 Sleep 2s
-Type ":StoryTargets"
+Type ":Story compile"
 Enter
 Sleep 4s
 Type ":qa!"

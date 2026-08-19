@@ -107,6 +107,12 @@ single word under the cursor.
 `K` (or `vim.lsp.buf.hover()`) shows the card name, its type, and its summary
 bullets. The hover is positioned over the resolved match range.
 
+![Hover / definition / references](assets/05-lsp-navigation.gif)
+
+The clip above also shows `gd` (open the card through its canonical path) and
+`gr` (every mention across the alias set) for a **multi-word** name matched
+through the same n-gram resolution as everything else.
+
 ### Go to definition
 
 `gd` opens the matching reference card file — through its canonical path, so it
@@ -134,6 +140,8 @@ Completion is **context-aware**:
   for `status`, and reference names for name-list fields (`chars`, `locs`,
   `items`, `orgs`, custom `creatures:`, …).
 
+![Completion of a multi-word alias](assets/07-lsp-completion.gif)
+
 ### Document outline
 
 `<leader>o` / `vim.lsp.buf.document_symbol()` lists scene (`##`) headings in the
@@ -151,6 +159,8 @@ current chapter, grouped by their chapter `#` heading.
    the canonical card name to the enclosing scene block's list field
    (`chars`/`locs`/`items`/`orgs`, or `creatures:`/… for custom types), creating
    the key if needed and de-duplicating case-insensitively.
+
+![Create a card from an uncarded prose name](assets/06-lsp-create-card.gif)
 
 ### Diagnostics
 

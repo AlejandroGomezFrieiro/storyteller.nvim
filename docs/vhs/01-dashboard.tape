@@ -1,4 +1,4 @@
-Output docs/assets/storyteller.gif
+Output docs/assets/01-dashboard.gif
 
 Set Shell "bash"
 Set FontSize 18
@@ -12,12 +12,6 @@ Enter
 Sleep 2s
 Type ":Story"
 Enter
-Sleep 3s
-Type ":Story corkboard"
-Enter
-Sleep 3s
-Type ":Story compile"
-Enter
-Sleep 3s
+Sleep 4s
 Type ":qa!"
 Enter

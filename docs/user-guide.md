@@ -137,12 +137,16 @@ Edit the current scene's metadata in a scratch buffer with `:Story meta`
 - `:Story workspace` — the three-pane workspace: binder (left), editor
   (center), inspector (right).
 
-`:Story` (or `<leader>s`) opens the dashboard, which collects these plus
+`:` `:Story` (or `<leader>s`) opens the dashboard, which collects these plus
 templates, references, detection, and export onto one screen.
+
+![Dashboard](assets/01-dashboard.gif)
 
 ### The corkboard
 
 The corkboard is a temporary buffer, not a second copy of the manuscript.
+
+![Corkboard](assets/02-corkboard.gif)
 
 | Key | Result |
 | --- | --- |
@@ -167,6 +171,8 @@ move between panes.
 into one editable, continuous manuscript. Edit it like any buffer; `:w` writes
 each changed chapter back to its source file. `:Story compile!` rebuilds it from
 disk.
+
+![Scrivenings](assets/03-scrivenings.gif)
 
 The *compiled* manuscript strips all metadata:
 
@@ -244,6 +250,8 @@ inbox. Ideas stay out of your prose and your word counts.
 
 `:Story track` opens the tracking dashboard:
 
+![Tracking dashboard](assets/04-track.gif)
+
 - total words and manuscript target;
 - per-chapter progress bars;
 - a **heatmap** of daily word output;
@@ -302,6 +310,17 @@ re-indexes on save and on watched-file changes.
 
 Try it: open a chapter that mentions "Odysseus", place the cursor on the name,
 and press `K`, `gd`, then `gr`.
+
+![LSP navigation](assets/05-lsp-navigation.gif)
+
+Creating a card for an uncarded name — here the code action (creatures, a
+custom codex type) writes a templated card from the selection:
+
+![LSP code action — create card](assets/06-lsp-create-card.gif)
+
+Multi-word names complete from their aliases as you type:
+
+![LSP completion](assets/07-lsp-completion.gif)
 
 The server is packaged as `storyteller-lsp`. The `nixvim_config` writing module
 wires it automatically; the standalone Storyteller Nixvim module exposes

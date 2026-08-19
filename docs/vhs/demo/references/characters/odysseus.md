@@ -2,6 +2,7 @@
 names:
   - Odysseus
   - Ody
+  - King of Ithaca
 ---
 
 ## Odysseus

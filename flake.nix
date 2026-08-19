@@ -45,6 +45,8 @@
           pkgs.vhs
           # Optional UI dependency; the plugin falls back without it.
           pkgs.vimPlugins.nui-nvim
+          # The language server, built from this flake.
+          self.packages.${system}.storyteller-lsp
           # Rust toolchain for the language server.
           pkgs.cargo
           pkgs.rustc

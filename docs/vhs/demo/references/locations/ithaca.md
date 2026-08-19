@@ -1,3 +1,9 @@
+---
+names:
+  - Ithaca
+---
+
 ## Ithaca
 
-- **Role:** home port
+- **Atmosphere:** rain-wrapped harbor
+- **Notes:** home port of the main character
