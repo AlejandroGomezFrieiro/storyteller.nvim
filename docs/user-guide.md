@@ -269,7 +269,7 @@ then matches them as you type or navigate.
 | Rename | `<leader>lr` | Rename the entity across its card and every mention. |
 | Completion | `tab`/`<C-n>` | Suggest character, location, item, and org names (and YAML fields/statuses) while you type. |
 | Document outline | `<leader>o` | List the scene headings in the current chapter. |
-| Code action | `<leader>la` | Create a reference card for an unknown name (character/location/item/org). |
+| Code action | `<leader>la` | Create a reference card for an unknown name (character/location/item/org), or link a known name into the current scene's metadata (`chars`/`locs`/`items`/`orgs`). |
 | Diagnostics | — | Hint at capitalized names with no card, and unused cards. |
 
 The server resolves **single- and multi-word** names ("Odysseus" as well as

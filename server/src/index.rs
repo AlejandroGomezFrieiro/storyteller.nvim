@@ -227,11 +227,23 @@ fn parse_card(path: &Path, rtype: &str) -> Option<RefCard> {
 }
 
 fn push_name(names: &mut HashMap<String, Vec<NameEntry>>, key: &str, entry: NameEntry) {
-    let k = key.to_lowercase();
+    let k = norm_key(key);
     let list = names.entry(k).or_default();
     if !list.iter().any(|e| e.name == entry.name) {
         list.push(entry);
     }
+}
+
+// Lowercase and strip punctuation so alias keys match the space-joined token
+// phrases used by `resolve_at` (e.g. "Capt. Clark" → "capt clark").
+fn norm_key(key: &str) -> String {
+    key.chars()
+        .map(|c| if c.is_alphanumeric() || c == '\'' || c == ' ' { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
 }
 
 pub fn scan(root: &Path) -> Index {

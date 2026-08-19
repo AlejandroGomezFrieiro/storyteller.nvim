@@ -260,6 +260,32 @@ impl Backend {
         }
         Some(key.to_string())
     }
+
+    // Link `item` into the scene metadata block containing `position`.
+    // Returns a WorkspaceEdit replacing the block if it isn't already linked.
+    fn link_edit(&self, uri: &Url, position: Position, key: &str, item: &str) -> Option<WorkspaceEdit> {
+        let lines = self.document_lines(uri);
+        let (yaml, end) = scene_block_indexes(&lines, position.line as usize)?;
+        let open = &lines[yaml];
+        let close = &lines[end];
+        let inner = &lines[yaml + 1..end];
+        if block_contains(inner, key, item) {
+            return None;
+        }
+        let new_inner = add_list_item(inner, key, item);
+        let close_chars = byte_to_utf16(close, close.len());
+        let range = Range::new(Position::new(yaml as u32, 0), Position::new(end as u32, close_chars));
+        let new_text = format!("{open}\n{}\n{close}", new_inner.join("\n"));
+        Some(WorkspaceEdit {
+            changes: Some(
+                [(uri.clone(), vec![TextEdit { range, new_text }])]
+                    .into_iter()
+                    .collect(),
+            ),
+            document_changes: None,
+            change_annotations: None,
+        })
+    }
 }
 
 fn utf16_to_byte(line: &str, character: u32) -> usize {
@@ -271,6 +297,95 @@ fn utf16_to_byte(line: &str, character: u32) -> usize {
         u += c.len_utf16() as u32;
     }
     line.len()
+}
+
+// Find the ```yaml .. ``` block of the scene containing `line`. Returns
+// (yaml_line, closing_fence_line) or None.
+fn scene_block_indexes(lines: &[String], line: usize) -> Option<(usize, usize)> {
+    let mut start = None;
+    for i in (0..=line).rev() {
+        if lines[i].trim_start().starts_with("## ") || lines[i].trim_start().starts_with("# ") {
+            start = Some(i);
+            break;
+        }
+    }
+    let start = start?;
+    let mut yaml = None;
+    for i in (start + 1)..lines.len() {
+        if i > line {
+            break; // looking back up to the cursor only
+        }
+        if lines[i].trim() == "```yaml" {
+            yaml = Some(i);
+        }
+    }
+    let yaml = yaml?;
+    let mut end = None;
+    for i in (yaml + 1)..lines.len() {
+        if lines[i].trim() == "```" {
+            end = Some(i);
+            break;
+        }
+        if lines[i].trim_start().starts_with("## ") {
+            break; // unclosed block: bail
+        }
+    }
+    let end = end?;
+    if !lines[yaml + 1].trim().eq_ignore_ascii_case("storyteller: scene") {
+        return None;
+    }
+    Some((yaml, end))
+}
+
+// Does a YAML block already list `item` under `key` (as `- item` or `[a, b]`)?
+fn block_contains(block: &[String], key: &str, item: &str) -> bool {
+    for (i, l) in block.iter().enumerate() {
+        let t = l.trim();
+        let is_key = t == key || (t.trim_end_matches(':') == key);
+        if !is_key {
+            continue;
+        }
+        if t.contains('[') && t.to_lowercase().contains(&item.to_lowercase()) {
+            return true;
+        }
+        let mut j = i + 1;
+        while j < block.len() && block[j].trim_start().starts_with("- ") {
+            let val = block[j].trim().trim_start_matches("- ").trim();
+            if val.eq_ignore_ascii_case(item) {
+                return true;
+            }
+            j += 1;
+        }
+    }
+    false
+}
+
+// Add an item to a `key:` list in a YAML block (creating the key if absent).
+fn add_list_item(block: &[String], key: &str, item: &str) -> Vec<String> {
+    let mut out = block.to_vec();
+    let mut ki = None;
+    for (i, l) in out.iter().enumerate() {
+        let t = l.trim();
+        if t == key || t.trim_end_matches(':') == key {
+            ki = Some(i);
+            break;
+        }
+    }
+    if let Some(i) = ki {
+        // dedupe against existing `- item` entries
+        let mut j = i + 1;
+        while j < out.len() && out[j].trim_start().starts_with("- ") {
+            if out[j].trim().trim_start_matches("- ").trim().eq_ignore_ascii_case(item) {
+                return out;
+            }
+            j += 1;
+        }
+        out.insert(j, format!("  - {item}"));
+    } else {
+        out.push(format!("{key}:"));
+        out.push(format!("  - {item}"));
+    }
+    out
 }
 
 #[tower_lsp::async_trait]
@@ -610,6 +725,26 @@ impl LanguageServer for Backend {
                 ..Default::default()
             }));
         }
+
+        // If the mention resolves to an existing card, offer to link it into
+        // the enclosing scene's metadata block.
+        if let Some((entry, _, _)) = self.resolve_pos(&uri, params.range.start) {
+            let field = match entry.rtype.as_str() {
+                "characters" => "chars",
+                "locations" => "locs",
+                "items" => "items",
+                _ => "orgs",
+            };
+            let title = format!("Link “{}” to this scene", entry.name);
+            if let Some(edit) = self.link_edit(&uri, params.range.start, field, &entry.name) {
+                actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                    kind: Some(CodeActionKind::REFACTOR),
+                    title,
+                    edit: Some(edit),
+                    ..Default::default()
+                }));
+            }
+        }
         Ok(Some(actions))
     }
 }
@@ -640,4 +775,54 @@ async fn main() {
     let stdout = tokio::io::stdout();
     let (service, socket) = LspService::new(Backend::new);
     Server::new(stdin, stdout, socket).serve(service).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scene_doc() -> Vec<String> {
+        "# Chapter 1\n\n## Scene 1\n\n```yaml\nstoryteller: scene\npov: Odysseus\nstatus: draft\n```\n\nOdysseus here.".lines().map(String::from).collect()
+    }
+
+    #[test]
+    fn finds_scene_block_around_cursor() {
+        let lines = scene_doc();
+        let (yaml, end) = scene_block_indexes(&lines, 9).unwrap();
+        assert_eq!(lines[yaml], "```yaml");
+        assert_eq!(lines[end], "```");
+        assert_eq!(yaml, 4);
+        assert_eq!(end, 8);
+    }
+
+    #[test]
+    fn blocks_without_scene_are_skipped() {
+        let lines = "```yaml\nfoo: 1\n```".lines().map(String::from).collect::<Vec<_>>();
+        assert_eq!(scene_block_indexes(&lines, 0), None);
+    }
+
+    #[test]
+    fn adds_list_item_to_existing_key() {
+        let block = vec!["status: draft".to_string(), "chars:".to_string(), "  - A".to_string()];
+        let out = add_list_item(&block, "chars", "B");
+        assert!(block_contains(&out, "chars", "A"));
+        assert!(block_contains(&out, "chars", "B"));
+        assert_eq!(out[2], "  - A");
+        assert_eq!(out[3], "  - B");
+    }
+
+    #[test]
+    fn adds_list_item_when_key_absent() {
+        let block = vec!["status: draft".to_string()];
+        let out = add_list_item(&block, "chars", "Odysseus");
+        assert_eq!(out, vec!["status: draft", "chars:", "  - Odysseus"]);
+        assert!(block_contains(&out, "chars", "odysseus"));
+    }
+
+    #[test]
+    fn add_is_idempotent() {
+        let block = add_list_item(&add_list_item(&["chars:".to_string()], "chars", "A"), "chars", "A");
+        let items: Vec<&str> = block[1..].iter().map(|l| l.trim()).collect();
+        assert_eq!(items, vec!["- A"]);
+    }
 }
