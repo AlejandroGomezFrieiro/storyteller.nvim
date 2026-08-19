@@ -102,6 +102,45 @@ impl Backend {
         Some((entry.clone(), start, end))
     }
 
+    // Extract the text covered by a range (a visual selection may span words
+    // or lines). Returns the normalized name (whitespace collapsed to spaces).
+    fn selection_text(&self, uri: &Url, range: Range) -> Option<String> {
+        let lines = self.document_lines(uri);
+        let start = range.start;
+        let end = range.end;
+        if lines.is_empty()
+            || start.line as usize >= lines.len()
+            || end.line as usize >= lines.len()
+        {
+            return None;
+        }
+        let mut out = String::new();
+        if start.line == end.line {
+            let line = &lines[start.line as usize];
+            let s = utf16_to_byte(line, start.character);
+            let e = utf16_to_byte(line, end.character);
+            out.push_str(&line[s..e.min(line.len())]);
+        } else {
+            let first = &lines[start.line as usize];
+            let s = utf16_to_byte(first, start.character).min(first.len());
+            out.push_str(&first[s..]);
+            for i in (start.line as usize + 1)..(end.line as usize) {
+                out.push('\n');
+                out.push_str(&lines[i]);
+            }
+            let last = &lines[end.line as usize];
+            let e = utf16_to_byte(last, end.character).min(last.len());
+            out.push('\n');
+            out.push_str(&last[..e]);
+        }
+        let normalized: String = out.split_whitespace().collect::<Vec<_>>().join(" ");
+        if normalized.is_empty() {
+            None
+        } else {
+            Some(normalized)
+        }
+    }
+
     fn card_content(&self, rtype: &str, name: &str) -> String {
         let body = match rtype {
             "character" => "- **Role:** \n- **Notes:** ",
@@ -513,18 +552,25 @@ impl LanguageServer for Backend {
 
     async fn code_action(&self, params: CodeActionParams) -> Result<Option<CodeActionResponse>> {
         let uri = params.text_document.uri;
-        let pos = params.range.start;
-        let lines = self.document_lines(&uri);
-        let line = lines.get(pos.line as usize).cloned().unwrap_or_default();
-        let byte = utf16_to_byte(&line, pos.character);
-        let word = index::tokenize(&line)
-            .into_iter()
-            .find(|t| byte >= t.start && byte <= t.end)
-            .map(|t| t.word);
 
-        let word = match word {
-            Some(w) => w,
-            None => return Ok(None),
+        // Prefer the full selection (visual mode may select a multi-word
+        // name); fall back to the single word under the cursor.
+        let word = match self.selection_text(&uri, params.range) {
+            Some(t) => t,
+            None => {
+                let pos = params.range.start;
+                let lines = self.document_lines(&uri);
+                let line = lines.get(pos.line as usize).cloned().unwrap_or_default();
+                let byte = utf16_to_byte(&line, pos.character);
+                match index::tokenize(&line)
+                    .into_iter()
+                    .find(|t| byte >= t.start && byte <= t.end)
+                    .map(|t| t.word)
+                {
+                    Some(w) => w,
+                    None => return Ok(None),
+                }
+            }
         };
         if word.len() < 3 {
             return Ok(None);
