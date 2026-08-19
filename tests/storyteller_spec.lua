@@ -258,6 +258,36 @@ end
 table.sort(json_list)
 assert_true(vim.deep_equal(list_fields, json_list), "schema.list_fields matches schema.json")
 
+for id, t in pairs(schema_json.reference_types) do
+  local lua_t = schema.reference_types[id]
+  assert_true(lua_t ~= nil, "schema.reference_types." .. id .. " matches schema.json")
+  assert_true(lua_t.dir == t.dir and lua_t.label == t.label and lua_t.field == t.field, "schema.reference_types." .. id .. " fields match schema.json")
+  assert_true(vim.deep_equal(lua_t.body, t.body), "schema.reference_types." .. id .. " body matches schema.json")
+end
+
+-- A folder outside the built-in types is still a first-class reference type.
+local codex_project = vim.fn.tempname()
+vim.fn.mkdir(codex_project .. "/references/creatures", "p")
+vim.fn.mkdir(codex_project .. "/chapters", "p")
+vim.fn.writefile({
+  "---", "names:",
+  "  - Gr'hall", "---", "", "## Gr'hall", "", "- **Notes:** ",
+}, codex_project .. "/references/creatures/grhall.md")
+vim.fn.writefile({ "# Chapter 1", "## S1", "Gr'hall lurks here." }, codex_project .. "/chapters/01.md")
+local codex_prj = project.paths_for(codex_project, true)
+local refs = index.references(codex_prj)
+assert_true(refs["creatures"] ~= nil and #refs["creatures"] == 1, "arbitrary references/creatures folder is indexed")
+assert_true(schema.type_field("creatures") == "creatures", "custom type links into a folder-named field")
+assert_true(schema.type_label("creatures") == "Creatures", "custom type gets a derived label")
+local detect = require("storyteller.detect")
+local sugs = detect.detect_scene(index.scenes(codex_prj)[1], codex_prj)
+assert_true(#sugs == 1 and sugs[1].type == "creatures", "detection yields suggestions for custom types")
+detect.link(index.scenes(codex_prj)[1], sugs[1].reference)
+local sc = index.scenes(codex_prj)[1]
+local after = table.concat(vim.fn.readfile(sc.path), "\n")
+assert_true(after:find("creatures:\n  %- Gr'hall") ~= nil, "custom type links into its folder-named field")
+vim.fn.delete(codex_project, "rf")
+
 vim.fn.delete(tmp, "rf")
 print(("RESULT: %d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

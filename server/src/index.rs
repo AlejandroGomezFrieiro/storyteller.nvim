@@ -48,6 +48,9 @@ pub struct Index {
     pub cards: Vec<RefCard>,
     pub chapters: Vec<Chapter>,
     pub names: HashMap<String, Vec<NameEntry>>,
+    // Reference type folders discovered under references/ (e.g. "characters",
+    // "creatures", ...). Lets the code actions offer any folder as a type.
+    pub reference_dirs: Vec<String>,
 }
 
 fn is_excluded(rel: &str) -> bool {
@@ -259,15 +262,30 @@ pub fn scan(root: &Path) -> Index {
         }
     }
 
-    let types = ["characters", "locations", "items", "organizations"];
     if refs_dir.is_dir() {
-        for t in types {
-            let dir = refs_dir.join(t);
-            if dir.is_dir() {
-                for p in list_md(&dir) {
-                    if let Some(card) = parse_card(&p, t) {
-                        index.cards.push(card);
-                    }
+        // Any subfolder under references/ is a reference type (folder = type id).
+        let mut dirs = Vec::new();
+        let entries = std::fs::read_dir(&refs_dir).into_iter().flatten().filter_map(|e| e.ok());
+        for entry in entries {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if is_excluded(&name) {
+                continue;
+            }
+            dirs.push(name);
+        }
+        dirs.sort();
+        index.reference_dirs = dirs.clone();
+        for t in dirs {
+            for p in list_md(&refs_dir.join(&t)) {
+                if let Some(card) = parse_card(&p, &t) {
+                    index.cards.push(card);
                 }
             }
         }

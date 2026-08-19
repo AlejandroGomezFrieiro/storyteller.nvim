@@ -206,9 +206,29 @@ matches one-to-three-word phrases, and honors an `ignore` list.
 ### Creating cards from your prose
 
 Select a name in visual mode and press `<leader>sr` (or run
-`:Story capture [character|location|item|organization]`). Storyteller creates
-the card under `references/<type>/`, seeds it with the selected name, and opens
-it. The prose is left untouched.
+`:Story capture [type]`). Storyteller creates the card under
+`references/<type>/`, seeds it with the selected name, and opens it. The prose
+is left untouched.
+
+### Arbitrary reference types ("codex")
+
+Any subfolder of `references/` is a reference type — the folder name *is* the
+type. Characters, locations, items, and organizations are built in, but you can
+add others (creatures, lore, culture, systems, …) with no configuration:
+
+```text
+references/
+  characters/   built-in → links into a scene's `chars:` list
+  creatures/    custom    → links into a scene's `creatures:` list
+  lore/         custom    → links into a scene's `lore:` list
+```
+
+Custom types work everywhere the built-ins do: `:Story capture creatures`,
+detection and linking, the browse panel, the language server (hover, `gd`,
+`gr`, rename, completion, diagnostics), and `:Story capture` picking. A scene
+links a custom type through a list named after its folder (there is no need to
+rename anything in an existing schema). The four built-in link fields
+(`chars`, `locs`, `items`, `orgs`) keep their short names for convenience.
 
 ---
 

@@ -25,6 +25,10 @@ struct RefType {
     #[allow(dead_code)]
     dir: String,
     label: String,
+    #[serde(default)]
+    field: String,
+    #[serde(default)]
+    body: Vec<String>,
 }
 
 struct Backend {
@@ -143,16 +147,68 @@ impl Backend {
 
     fn card_content(&self, rtype: &str, name: &str) -> String {
         let body = match rtype {
-            "character" => "- **Role:** \n- **Notes:** ",
-            "location" => "- **Atmosphere:** \n- **Notes:** ",
-            "item" => "- **Type:** \n- **Notes:** ",
-            _ => "- **Wants:** \n- **Members:** \n- **Notes:** ",
+            "character" => vec!["Role", "Notes"],
+            "location" => vec!["Atmosphere", "Notes"],
+            "item" => vec!["Type", "Notes"],
+            "organization" => vec!["Wants", "Members", "Notes"],
+            _ => vec!["Notes"],
         };
+        let bullets = body
+            .into_iter()
+            .map(|b| format!("- **{}:** ", b))
+            .collect::<Vec<_>>()
+            .join("\n");
         format!(
-            "---\nnames:\n  - {name}\n---\n\n## {name}\n\n{body}\n",
+            "---\nnames:\n  - {name}\n---\n\n## {name}\n\n{bullets}\n",
             name = name,
-            body = body
+            bullets = bullets
         )
+    }
+
+    // Folder (rtype) -> scene-list field (chars/locs/items/orgs or the folder
+    // itself for user-added codex types).
+    fn type_field(&self, rtype: &str) -> String {
+        self.schema
+            .reference_types
+            .values()
+            .find(|t| t.dir == rtype)
+            .map(|t| t.field.clone())
+            .unwrap_or_else(|| rtype.to_string())
+    }
+
+    // Human label for a reference-type folder.
+    fn type_label(&self, rtype: &str) -> String {
+        self.schema
+            .reference_types
+            .values()
+            .find(|t| t.dir == rtype)
+            .map(|t| t.label.clone())
+            .unwrap_or_else(|| {
+                let s = rtype.replace(['_', '-'], " ");
+                let mut it = s.chars();
+                match it.next() {
+                    Some(c) => c.to_uppercase().collect::<String>() + it.as_str(),
+                    None => s,
+                }
+            })
+    }
+
+    // All known type folders: schema-declared ones plus folders discovered on
+    // disk (deduped, schema order first).
+    fn type_dirs(&self) -> Vec<String> {
+        let idx = self.index.read().unwrap();
+        let mut out: Vec<String> = self
+            .schema
+            .reference_types
+            .values()
+            .map(|t| t.dir.clone())
+            .collect();
+        for d in &idx.reference_dirs {
+            if !out.contains(d) {
+                out.push(d.clone());
+            }
+        }
+        out
     }
 
     fn card_uri(&self, rtype: &str, name: &str) -> Option<Url> {
@@ -166,7 +222,9 @@ impl Backend {
             "character" => "characters",
             "location" => "locations",
             "item" => "items",
-            _ => "organizations",
+            "organization" => "organizations",
+            // Codex-style custom types: the folder name IS the type id.
+            other => other,
         };
         Url::from_file_path(root.join("references").join(dir).join(format!("{slug}.md"))).ok()
     }
@@ -616,7 +674,13 @@ impl LanguageServer for Backend {
                     "pov" | "location" | "chars" | "locs" | "items" | "orgs" => {
                         self.name_items(&mut items);
                     }
-                    _ => {}
+                    f => {
+                        // Codex-style list fields named after their folder
+                        // (e.g. `creatures:` from references/creatures).
+                        if self.type_field(f) == f {
+                            self.name_items(&mut items);
+                        }
+                    }
                 }
             }
             // Always offer field names.
@@ -692,18 +756,12 @@ impl LanguageServer for Backend {
         }
 
         let mut actions = Vec::new();
-        let types = ["character", "location", "item", "organization"];
-        for rtype in types {
-            let Some(new_uri) = self.card_uri(rtype, &word) else {
+        for rtype in self.type_dirs() {
+            let Some(new_uri) = self.card_uri(&rtype, &word) else {
                 continue;
             };
-            let label = self
-                .schema
-                .reference_types
-                .get(rtype)
-                .map(|t| t.label.clone())
-                .unwrap_or_else(|| rtype.to_string());
-            let content = self.card_content(rtype, &word);
+            let label = self.type_label(&rtype);
+            let content = self.card_content(&rtype, &word);
             let edit = WorkspaceEdit {
                 changes: None,
                 document_changes: Some(DocumentChanges::Edits(vec![TextDocumentEdit {
@@ -729,14 +787,9 @@ impl LanguageServer for Backend {
         // If the mention resolves to an existing card, offer to link it into
         // the enclosing scene's metadata block.
         if let Some((entry, _, _)) = self.resolve_pos(&uri, params.range.start) {
-            let field = match entry.rtype.as_str() {
-                "characters" => "chars",
-                "locations" => "locs",
-                "items" => "items",
-                _ => "orgs",
-            };
+            let field = self.type_field(&entry.rtype);
             let title = format!("Link “{}” to this scene", entry.name);
-            if let Some(edit) = self.link_edit(&uri, params.range.start, field, &entry.name) {
+            if let Some(edit) = self.link_edit(&uri, params.range.start, &field, &entry.name) {
                 actions.push(CodeActionOrCommand::CodeAction(CodeAction {
                     kind: Some(CodeActionKind::REFACTOR),
                     title,

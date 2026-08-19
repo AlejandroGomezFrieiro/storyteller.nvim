@@ -81,7 +81,7 @@ A single `:Story` command with subcommand-style arguments and completion:
 | `:Story session start\|end` | Track a writing session. |
 | `:Story snapshot [message]` | Create a safety snapshot. |
 | `:Story references` | Browse reference cards. |
-| `:Story capture [type]` | Create a reference card from a visual selection. |
+| `:Story capture [type]` | Create a reference card from a visual selection (any `references/<type>/`). |
 | `:Story detect [scene]` | Detect and link references. |
 | `:Story idea` | Capture an idea into `research/ideas.md`. |
 | `:Story ideas` | Open the ideas inbox. |
@@ -143,15 +143,17 @@ matches conservatively.
 ## Text Interaction
 
 Select a name in visual mode and press `<leader>sr` (or run
-`:Story capture [character|location|item|organization]`) to create a reference
-card for it — the selected prose is left untouched and the new card opens for
-editing.
+`:Story capture [type]`) to create a reference card for it — the selected prose
+is left untouched and the new card opens for editing. Any subfolder of
+`references/` is a reference type, so custom categories ("creatures", "lore",
+…) need no configuration.
 
 ## Language Server
 
 Storyteller ships a prose-aware language server (Rust/tower-lsp) that replaces
 markdown-oxide for writing projects. It resolves bare character, location, item,
-and organization names in prose — no `[[wikilinks]]` needed — powering:
+and organization names in prose — and any custom `references/<type>/` folder —
+with no `[[wikilinks]]` needed, powering:
 
 - `gd` → open the reference card for the name under the cursor
 - `K` / hover → card summary
@@ -223,6 +225,10 @@ affiliated with, endorsed by, or a replacement for the projects below.
   [markdown-oxide](https://github.com/Feel-ix-343/markdown-oxide), and
   [Neorg](https://github.com/nvim-neorg/neorg) informed the workspace,
   Markdown-linking, and modular-Neovim design.
+- [obsidian-storyline](https://github.com/PixeroJan/obsidian-storyline)
+  (its extensible "Codex" model) inspired arbitrary, user-defined reference
+  categories — any `references/<type>/` folder becomes a first-class
+  reference type.
 - [triforce.nvim](https://github.com/gisketch/triforce.nvim) inspired the
   tracking dashboard (activity heatmap, streaks, milestones).
 - [morph.nvim](https://github.com/jrop/morph.nvim) is vendored as the

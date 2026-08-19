@@ -239,22 +239,24 @@ M.chapter_words = function(ch)
   return total
 end
 
--- Reference cards by type.
+-- Reference cards by type. Any subfolder under references/ is a type (folder
+-- name = type id), so custom codex categories work without configuration.
 M.references = function(prj)
   prj = prj or project.current()
-  local types = {
-    characters = prj.characters,
-    locations = prj.locations,
-    items = prj.items,
-    organizations = prj.organizations,
-  }
   local out = {}
-  for t, dir in pairs(types) do
-    local cards = {}
-    for _, p in ipairs(list_md(dir)) do
-      cards[#cards + 1] = parse_reference(p)
+  if not prj or vim.fn.isdirectory(prj.references) ~= 1 then
+    return out
+  end
+  local subdirs = vim.fn.glob(prj.references .. "/*", false, true)
+  for _, sub in ipairs(subdirs) do
+    if vim.fn.isdirectory(sub) == 1 then
+      local t = vim.fn.fnamemodify(sub, ":t")
+      local cards = {}
+      for _, p in ipairs(list_md(sub)) do
+        cards[#cards + 1] = parse_reference(p)
+      end
+      out[t] = cards
     end
-    out[t] = cards
   end
   return out
 end

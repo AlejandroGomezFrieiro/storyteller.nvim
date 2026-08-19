@@ -10,6 +10,7 @@ local project = require("storyteller.project")
 local index = require("storyteller.index")
 local detect = require("storyteller.detect")
 local pickers = require("storyteller.pickers")
+local schema = require("storyteller.schema")
 
 local M = {}
 
@@ -67,12 +68,13 @@ M.panel = function(prj)
     return
   end
   local refs = index.references(prj)
-  local groups = {
-    { key = "characters", label = "Characters" },
-    { key = "locations", label = "Locations" },
-    { key = "items", label = "Items" },
-    { key = "organizations", label = "Organizations" },
-  }
+  local groups = {}
+  for dir in pairs(refs) do
+    groups[#groups + 1] = { key = dir, label = schema.type_label(dir) }
+  end
+  table.sort(groups, function(a, b)
+    return a.key < b.key
+  end)
   local entries = {}
   for _, g in ipairs(groups) do
     local cards = refs[g.key] or {}

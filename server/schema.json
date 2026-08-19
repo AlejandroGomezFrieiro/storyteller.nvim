@@ -19,9 +19,9 @@
   "list_fields": ["tags", "chars", "locs", "items", "orgs", "ignore", "aliases", "names"],
   "scene_sentinel": "storyteller: scene",
   "reference_types": {
-    "character": { "dir": "characters", "label": "Character" },
-    "location": { "dir": "locations", "label": "Location" },
-    "item": { "dir": "items", "label": "Item" },
-    "organization": { "dir": "organizations", "label": "Organization" }
+    "character": { "dir": "characters", "label": "Character", "field": "chars", "body": ["Role", "Notes"] },
+    "location": { "dir": "locations", "label": "Location", "field": "locs", "body": ["Atmosphere", "Notes"] },
+    "item": { "dir": "items", "label": "Item", "field": "items", "body": ["Type", "Notes"] },
+    "organization": { "dir": "organizations", "label": "Organization", "field": "orgs", "body": ["Wants", "Members", "Notes"] }
   }
 }

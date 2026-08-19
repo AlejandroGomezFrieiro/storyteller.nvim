@@ -43,6 +43,67 @@ M.list_fields = {
   names = true,
 }
 
+-- Reference types declared in the shared schema. Keyed by singular id; each
+-- entry maps a folder (dir) to a scene-list field and a card body template.
+-- Custom codex types (folders not listed here) are still first-class: the
+-- folder name becomes the type id and the list field.
+M.reference_types = {
+  character = { dir = "characters", label = "Character", field = "chars", body = { "Role", "Notes" } },
+  location = { dir = "locations", label = "Location", field = "locs", body = { "Atmosphere", "Notes" } },
+  item = { dir = "items", label = "Item", field = "items", body = { "Type", "Notes" } },
+  organization = { dir = "organizations", label = "Organization", field = "orgs", body = { "Wants", "Members", "Notes" } },
+}
+
+-- Folder (plural, e.g. "characters") -> scene-list field. Unknown folders map
+-- to themselves (a `creatures:` folder links into a `creatures` list).
+M.type_field = function(dir)
+  for _, t in pairs(M.reference_types) do
+    if t.dir == dir then
+      return t.field
+    end
+  end
+  return dir
+end
+
+-- Folder -> human label; unknown folders get a prettified folder name.
+M.type_label = function(dir)
+  for _, t in pairs(M.reference_types) do
+    if t.dir == dir then
+      return t.label
+    end
+  end
+  return dir:gsub("^%l", string.upper):gsub("[_-]", " ")
+end
+
+-- Folder -> card body bullets (used when creating a new card).
+M.type_body = function(dir)
+  for _, t in pairs(M.reference_types) do
+    if t.dir == dir then
+      return t.body
+    end
+  end
+  return { "Notes" }
+end
+
+-- All known type folders: schema-declared first, then any discovered on disk.
+M.type_dirs = function(prj_dirs)
+  local out = {}
+  local seen = {}
+  for _, t in pairs(M.reference_types) do
+    if not seen[t.dir] then
+      seen[t.dir] = true
+      out[#out + 1] = t.dir
+    end
+  end
+  for _, d in ipairs(prj_dirs or {}) do
+    if not seen[d] then
+      seen[d] = true
+      out[#out + 1] = d
+    end
+  end
+  return out
+end
+
 -- The `storyteller: scene` sentinel that marks a scene-local YAML block.
 M.scene_sentinel = "storyteller: scene"
 

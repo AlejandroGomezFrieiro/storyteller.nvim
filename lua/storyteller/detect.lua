@@ -11,6 +11,7 @@
 local project = require("storyteller.project")
 local meta = require("storyteller.meta")
 local index = require("storyteller.index")
+local schema = require("storyteller.schema")
 
 local M = {}
 
@@ -143,14 +144,19 @@ local function scene_tokens(sc)
   return toks
 end
 
--- Suggestions for one scene (list of { name, confidence, type, reference, path }).
-M.detect_scene = function(sc, prj, idx)
-  prj = prj or project.current()
-  idx = idx or M.build_index(prj)
+local function build_idxs(prj)
+  local fields = { "chars", "locs", "items", "orgs" }
+  local refs = index.references(prj)
+  for dir in pairs(refs) do
+    fields[#fields + 1] = schema.type_field(dir)
+  end
+  return fields
+end
 
-  local m = meta.scene(sc).meta
+local function linked_ids(sc, prj)
   local linked, ignored = {}, {}
-  for _, k in ipairs({ "chars", "locs", "items", "orgs" }) do
+  local m = meta.scene(sc).meta
+  for _, k in ipairs(build_idxs(prj)) do
     for _, v in ipairs(m[k] or {}) do
       linked[strip(tostring(v)):lower()] = true
     end
@@ -158,6 +164,15 @@ M.detect_scene = function(sc, prj, idx)
   for _, v in ipairs(m.ignore or {}) do
     ignored[strip(tostring(v)):lower()] = true
   end
+  return linked, ignored
+end
+
+-- Suggestions for one scene (list of { name, confidence, type, reference, path }).
+M.detect_scene = function(sc, prj, idx)
+  prj = prj or project.current()
+  idx = idx or M.build_index(prj)
+
+  local linked, ignored = linked_ids(sc, prj)
 
   local toks = scene_tokens(sc)
   local sugs, used = {}, {}
@@ -208,17 +223,6 @@ M.detect_project = function(prj)
   return out
 end
 
-local FIELD = {
-  character = "chars",
-  characters = "chars",
-  location = "locs",
-  locations = "locs",
-  item = "items",
-  items = "items",
-  organization = "orgs",
-  organizations = "orgs",
-}
-
 local function push_unique(list, item)
   list = list or {}
   for _, v in ipairs(list) do
@@ -232,7 +236,7 @@ end
 
 -- Link a reference into a scene's metadata.
 M.link = function(scene_or_path, ref)
-  local field = FIELD[ref and ref.type] or "chars"
+  local field = schema.type_field(ref and ref.type or "")
   if type(scene_or_path) == "table" then
     local scene = scene_or_path
     local info = meta.scene(scene)
