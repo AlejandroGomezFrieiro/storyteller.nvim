@@ -1,5 +1,10 @@
 # storyteller.nvim
 
+> [!WARNING]
+> Storyteller is in **early stages of development**. APIs, the command
+> surface, the metadata schema, and the language server may change
+> significantly between releases. Expect rough edges and breaking changes.
+
 Storyteller is a Markdown-native project layer for long-form writing in
 Neovim. It keeps chapters, scenes, reference cards, planning metadata, and
 exports in ordinary files so the project remains usable without the plugin.
