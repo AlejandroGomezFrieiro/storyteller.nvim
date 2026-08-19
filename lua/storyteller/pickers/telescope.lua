@@ -57,7 +57,8 @@ M.pick_list = function(entries, opts)
     results[#results + 1] = { value = e.value, display = e.display or tostring(e.value) }
   end
 
-  presenters.new(opts.bufnr or vim.api.nvim_get_current_buf(), {
+  presenters.new({
+    bufnr = opts.bufnr or vim.api.nvim_get_current_buf(),
     prompt_title = opts.prompt_title or "Storyteller",
     results_title = opts.results_title,
     finder = finders.new_table({ results = results }),
