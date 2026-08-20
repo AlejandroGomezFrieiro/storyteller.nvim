@@ -1,4 +1,6 @@
 Output docs/assets/04-track.gif
+Require nvim
+Require storyteller-lsp
 
 Set Shell "bash"
 Set Theme "Catppuccin Frappe"
@@ -11,6 +13,8 @@ Set MarginFill "#1e1e2e"
 Set BorderRadius 12
 Set WindowBar Colorful
 Set CursorBlink false
+Set Framerate 60
+Set PlaybackSpeed 1.0
 Set TypingSpeed 45ms
 
 Hide

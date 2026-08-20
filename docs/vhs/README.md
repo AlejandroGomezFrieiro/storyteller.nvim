@@ -29,6 +29,13 @@ vhs docs/vhs/10-health.tape
 vhs docs/vhs/storyteller.tape
 ```
 
+Validate every tape before recording, then regenerate every GIF with:
+
+```bash
+nix develop .#demo --command vhs validate 'docs/vhs/*.tape'
+for tape in docs/vhs/*.tape; do nix develop .#demo --command vhs "$tape"; done
+```
+
 The output paths are declared inside each tape:
 
 | Tape | GIF | What it shows |
@@ -46,5 +53,6 @@ The output paths are declared inside each tape:
 | `storyteller.tape` | `storyteller.gif` | Tour: dashboard → corkboard → scrivenings. |
 
 `demo-init.lua` starts the plugin and the `storyteller-lsp` client for the
-demo project. Regenerate all assets after a visual or workflow change before
-publishing documentation.
+demo project. Each tape requires the demo executables and pins 60 FPS with
+normal playback speed for deterministic, current VHS output. Regenerate all
+assets after a visual or workflow change before publishing documentation.
