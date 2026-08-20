@@ -75,9 +75,9 @@
   },
   "document_types": {
     "part":     { "label": "Part",     "heading_level": 1, "contains": ["chapter"] },
-    "chapter":  { "label": "Chapter",  "heading_level": 2, "contains": ["scene", "beat"] },
-    "scene":    { "label": "Scene",    "heading_level": 3, "metadata": true },
-    "beat":     { "label": "Beat",     "heading_level": 4 }
+    "chapter":  { "label": "Chapter",  "heading_level": 1, "contains": ["scene", "beat"] },
+    "scene":    { "label": "Scene",    "heading_level": 2, "metadata": true },
+    "beat":     { "label": "Beat",     "heading_level": 3 }
   },
   "diagnostics": {
     "unknown_field": true,
@@ -89,6 +89,7 @@
     "timeline_overlap": true,
     "relative_unresolved": true,
     "dangling_relation": true,
+    "narration_consistency": false,
     "duplicate_alias": true,
     "missing_min_fields": true,
     "duplicate_id": true,
