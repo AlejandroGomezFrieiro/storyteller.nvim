@@ -81,6 +81,16 @@ register("status", "Set/cycle current scene status", function(prj, args)
     vim.notify("[storyteller] No scene under the cursor.", vim.log.levels.WARN)
     return
   end
+  -- Prefer the LSP automation bus when a storyteller client is attached.
+  local lsp = require("storyteller.lsp")
+  if lsp.available() then
+    local res = lsp.command("storyteller.statusCycle", { scene.path, (scene.start_line or 1) - 1 })
+    if res and res.ok and res.edit then
+      vim.lsp.util.apply_workspace_edit(res.edit)
+      vim.notify("[storyteller] Scene status updated.", vim.log.levels.INFO)
+      return
+    end
+  end
   local value = args[2]
   if value and schema.valid_status(value) then
     meta.scene_write(scene, { status = value })
@@ -99,6 +109,19 @@ register("migrate", "Migrate inline metadata to scene YAML", function(prj)
   end
   local n = meta.migrate(file)
   vim.notify(("[storyteller] Migrated %d scene(s)."):format(n), vim.log.levels.INFO)
+end)
+
+register("schema", "Inspect or write the merged schema", function(prj, args)
+  prj = need(prj)
+  if not prj then
+    return
+  end
+  if args[2] == "write" then
+    local path = schema.write(prj.root)
+    vim.notify("[storyteller] Wrote " .. path, vim.log.levels.INFO)
+  else
+    vim.notify(vim.json.encode(schema.dump(prj.root)), vim.log.levels.INFO)
+  end
 end)
 
 -- --- Compilation ------------------------------------------------------------
@@ -275,6 +298,9 @@ function M.dispatch(prj, args, opts)
   local name = args[1]
   if not name or name == "" then
     name = "dashboard"
+  end
+  if prj and prj.root then
+    schema.load(prj.root)
   end
   local handler = HANDLERS[name]
   if not handler then

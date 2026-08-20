@@ -7,21 +7,63 @@
     "done": "unused",
     "unused": "outline"
   },
+  "enums": {},
   "scene_fields": [
-    "id", "status", "planning", "pov", "location", "time",
-    "goal", "conflict", "outcome", "beat", "target", "tags",
-    "chars", "locs", "items", "orgs", "ignore"
+    "id", "status", "planning", "pov", "location", "time", "day", "time_of_day",
+    "goal", "conflict", "outcome", "beat", "target", "setup", "payoff",
+    "tags", "chars", "locs", "items", "orgs", "ignore"
   ],
+  "scene_field_defs": {
+    "status":   { "type": "enum", "from": "statuses", "completion": true },
+    "pov":      { "type": "reference", "ref_type": "character", "completion": true },
+    "location": { "type": "reference", "ref_type": "location", "completion": true },
+    "chars":    { "type": "reference-list", "ref_type": "character", "completion": true },
+    "locs":     { "type": "reference-list", "ref_type": "location", "completion": true },
+    "items":    { "type": "reference-list", "ref_type": "item", "completion": true },
+    "orgs":     { "type": "reference-list", "ref_type": "organization", "completion": true },
+    "setup":    { "type": "thread-key", "completion": true },
+    "payoff":   { "type": "thread-key", "completion": true },
+    "time":     { "type": "string" },
+    "day":      { "type": "string" },
+    "time_of_day": { "type": "string" }
+  },
   "chapter_fields": [
     "type", "pov", "location", "status", "planning", "target",
     "chars", "locs", "items", "orgs", "ignore", "tags", "aliases", "names"
   ],
+  "chapter_field_defs": {
+    "status":   { "type": "enum", "from": "statuses", "completion": true },
+    "pov":      { "type": "reference", "ref_type": "character", "completion": true },
+    "location": { "type": "reference", "ref_type": "location", "completion": true },
+    "chars":    { "type": "reference-list", "ref_type": "character", "completion": true },
+    "locs":     { "type": "reference-list", "ref_type": "location", "completion": true },
+    "items":    { "type": "reference-list", "ref_type": "item", "completion": true },
+    "orgs":     { "type": "reference-list", "ref_type": "organization", "completion": true }
+  },
   "list_fields": ["tags", "chars", "locs", "items", "orgs", "ignore", "aliases", "names"],
   "scene_sentinel": "storyteller: scene",
   "reference_types": {
-    "character": { "dir": "characters", "label": "Character", "field": "chars", "body": ["Role", "Notes"] },
-    "location": { "dir": "locations", "label": "Location", "field": "locs", "body": ["Atmosphere", "Notes"] },
-    "item": { "dir": "items", "label": "Item", "field": "items", "body": ["Type", "Notes"] },
-    "organization": { "dir": "organizations", "label": "Organization", "field": "orgs", "body": ["Wants", "Members", "Notes"] }
+    "character":     { "dir": "characters",     "label": "Character",     "field": "chars",
+                       "body": ["Role", "Notes"], "min_fields": ["Role"] },
+    "location":      { "dir": "locations",      "label": "Location",      "field": "locs",
+                       "body": ["Atmosphere", "Notes"], "min_fields": [] },
+    "item":          { "dir": "items",          "label": "Item",          "field": "items",
+                       "body": ["Type", "Notes"], "min_fields": [] },
+    "organization":  { "dir": "organizations",  "label": "Organization",  "field": "orgs",
+                       "body": ["Wants", "Members", "Notes"], "min_fields": [] }
+  },
+  "diagnostics": {
+    "unknown_field": true,
+    "invalid_enum": true,
+    "missing_id": false,
+    "unresolved_setup": true,
+    "unresolved_payoff": true,
+    "timeline_regression": true,
+    "duplicate_alias": true,
+    "missing_min_fields": true,
+    "duplicate_id": true,
+    "incomplete_beat": true,
+    "over_target": true,
+    "chars_not_mentioned": true
   }
 }

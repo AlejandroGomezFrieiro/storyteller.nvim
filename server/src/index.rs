@@ -461,6 +461,85 @@ pub fn mention_count(index: &Index, card: &RefCard) -> usize {
     mentions(index, card).len()
 }
 
+// Scene prose (headings, bullets, blockquotes, and fences stripped) as one
+// lowercased, single-spaced string — used for mention checks and word counts.
+pub fn scene_prose(scene: &Scene) -> String {
+    let lines = read_lines(&scene.path);
+    if lines.is_empty() {
+        return String::new();
+    }
+    let start = scene.start_line as usize;
+    let end = (scene.end_line as usize).min(lines.len().saturating_sub(1));
+    if start >= lines.len() {
+        return String::new();
+    }
+    let (_, content_start) = meta::parse_scene_block(&lines, start, end);
+    let begin = content_start.max(start + 1).min(lines.len() - 1);
+    let mut out = String::new();
+    for i in begin..=end {
+        let t = lines[i].trim();
+        if t.is_empty()
+            || t.starts_with('#')
+            || t.starts_with("```")
+            || t.starts_with("- ")
+            || t.starts_with("* ")
+            || t.starts_with("> ")
+        {
+            continue;
+        }
+        out.push_str(&lines[i]);
+        out.push('\n');
+    }
+    out
+}
+
+pub fn scene_words(scene: &Scene) -> usize {
+    scene_prose(scene).split_whitespace().count()
+}
+
+// Unique, sorted tag values across chapter frontmatter and scene blocks.
+pub fn tag_values(index: &Index) -> Vec<String> {
+    let mut set = HashSet::new();
+    for ch in &index.chapters {
+        let lines = read_lines(&ch.path);
+        if let Some((fm, _)) = meta::parse_frontmatter(&lines) {
+            for t in meta::value_to_list(fm.get("tags").unwrap_or(&Value::Null)) {
+                set.insert(t);
+            }
+        }
+        for sc in &ch.scenes {
+            for t in meta::value_to_list(sc.meta.get("tags").unwrap_or(&Value::Null)) {
+                set.insert(t);
+            }
+        }
+    }
+    let mut out: Vec<String> = set.into_iter().collect();
+    out.sort();
+    out
+}
+
+// Deduped, sorted union of every `setup:` / `payoff:` thread key across scenes.
+pub fn thread_keys(index: &Index) -> Vec<String> {
+    let mut set = HashSet::new();
+    for ch in &index.chapters {
+        for sc in &ch.scenes {
+            for key in ["setup", "payoff"] {
+                if let Some(v) = sc.meta.get(key) {
+                    for s in meta::value_to_list(v) {
+                        let s = s.trim().to_string();
+                        if !s.is_empty() {
+                            set.insert(s);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut out: Vec<String> = set.into_iter().collect();
+    out.sort();
+    out
+}
+
 // Capitalized words in prose that look like names but have no card. Returns
 // (line, byte_start, word).
 pub fn unknown_names(index: &Index, text: &str) -> Vec<(usize, usize, String)> {

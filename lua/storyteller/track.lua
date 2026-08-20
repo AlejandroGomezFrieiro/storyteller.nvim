@@ -237,6 +237,61 @@ function M.milestones(prj)
   }
 end
 
+-- --- POV / character / tag coverage -----------------------------------------
+
+-- Per-scene POV distribution, per-character appearance counts, and tag usage
+-- counts, all ranked descending. Powers the "balance" section of the report
+-- and the tracking view.
+function M.pov_balance(prj)
+  prj = prj or project.current()
+  local povs, chars, tags = {}, {}, {}
+  local total = 0
+  for _, sc in ipairs(index.scenes(prj)) do
+    total = total + 1
+    local m = sc.meta or {}
+    local pov = m.pov
+    if type(pov) == "table" then
+      pov = pov[1]
+    end
+    if pov and pov ~= "" then
+      povs[pov] = (povs[pov] or 0) + 1
+    end
+    for _, c in ipairs(m.chars or {}) do
+      if c and c ~= "" then
+        chars[c] = (chars[c] or 0) + 1
+      end
+    end
+    for _, t in ipairs(m.tags or {}) do
+      if t and t ~= "" then
+        tags[t] = (tags[t] or 0) + 1
+      end
+    end
+  end
+  local function ranked(t)
+    local keys = {}
+    for k in pairs(t) do
+      keys[#keys + 1] = k
+    end
+    table.sort(keys, function(a, b)
+      local ca, cb = t[a] or 0, t[b] or 0
+      if ca ~= cb then
+        return ca > cb
+      end
+      return a < b
+    end)
+    return keys
+  end
+  return {
+    total_scenes = total,
+    povs = povs,
+    characters = chars,
+    tags = tags,
+    pov_order = ranked(povs),
+    char_order = ranked(chars),
+    tag_order = ranked(tags),
+  }
+end
+
 -- --- Plain-text report (fallback dashboard) ---------------------------------
 
 function M.report(prj)
@@ -263,6 +318,30 @@ function M.report(prj)
   end
   local streaks = M.streaks(prj)
   out[#out + 1] = ("Streak: %d current · %d longest"):format(streaks.current, streaks.longest)
+  local balance = M.pov_balance(prj)
+  if #balance.pov_order > 0 then
+    out[#out + 1] = ""
+    out[#out + 1] = "## POV balance"
+    for _, pov in ipairs(balance.pov_order) do
+      local n = balance.povs[pov]
+      local pct = balance.total_scenes > 0 and math.floor(n / balance.total_scenes * 100) or 0
+      out[#out + 1] = ("  %-24s %3d scenes (%d%%)"):format(pov, n, pct)
+    end
+  end
+  if #balance.char_order > 0 then
+    out[#out + 1] = ""
+    out[#out + 1] = "## Characters"
+    for _, c in ipairs(balance.char_order) do
+      out[#out + 1] = ("  %-24s %3d scenes"):format(c, balance.characters[c])
+    end
+  end
+  if #balance.tag_order > 0 then
+    out[#out + 1] = ""
+    out[#out + 1] = "## Tags"
+    for _, t in ipairs(balance.tag_order) do
+      out[#out + 1] = ("  %-24s %3d scenes"):format(t, balance.tags[t])
+    end
+  end
   local recent = M.heatmap(prj, 1)
   out[#out + 1] = ""
   out[#out + 1] = "## Last 7 days"

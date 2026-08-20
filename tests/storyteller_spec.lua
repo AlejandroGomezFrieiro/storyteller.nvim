@@ -31,6 +31,9 @@ local meta = require("storyteller.meta")
 local track = require("storyteller.track")
 local compile = require("storyteller.compile")
 local index = require("storyteller.index")
+require("storyteller.ui")
+require("storyteller.ui.views")
+require("storyteller.ui.dashboard")
 
 -- An explicit marker must be enough to bootstrap the standard layout.
 local marker_project = project.resolve(tmp .. "/idea.md")
@@ -71,6 +74,10 @@ local parsed_scene = index.scenes(prj)[1]
 assert_true(parsed_scene.meta.status == "revision" and parsed_scene.meta.pov == "Odysseus", "scene YAML metadata is indexed")
 assert_true(index.scene_words(parsed_scene) == 10, "scene word count excludes YAML block")
 assert_true(meta.ensure_id(parsed_scene) ~= nil, "scene receives stable ID when needed")
+
+local balance = track.pov_balance(prj)
+assert_true(balance.povs["Odysseus"] == 1, "pov_balance counts POV scenes")
+assert_true(balance.tags["act-1"] == 1, "pov_balance counts tag usage")
 
 -- The progress format stores a cumulative total so day three is a real delta.
 local original_date = os.date
@@ -263,7 +270,13 @@ for id, t in pairs(schema_json.reference_types) do
   assert_true(lua_t ~= nil, "schema.reference_types." .. id .. " matches schema.json")
   assert_true(lua_t.dir == t.dir and lua_t.label == t.label and lua_t.field == t.field, "schema.reference_types." .. id .. " fields match schema.json")
   assert_true(vim.deep_equal(lua_t.body, t.body), "schema.reference_types." .. id .. " body matches schema.json")
+  assert_true(vim.deep_equal(lua_t.min_fields, t.min_fields), "schema.reference_types." .. id .. " min_fields matches schema.json")
 end
+assert_true(vim.deep_equal(schema.status_next, schema_json.status_next), "schema.status_next matches schema.json")
+assert_true(vim.deep_equal(schema.scene_field_defs, schema_json.scene_field_defs), "schema.scene_field_defs matches schema.json")
+assert_true(vim.deep_equal(schema.chapter_field_defs, schema_json.chapter_field_defs), "schema.chapter_field_defs matches schema.json")
+assert_true(vim.deep_equal(schema.enums, schema_json.enums), "schema.enums matches schema.json")
+assert_true(vim.deep_equal(schema.diagnostics, schema_json.diagnostics), "schema.diagnostics matches schema.json")
 
 -- A folder outside the built-in types is still a first-class reference type.
 local codex_project = vim.fn.tempname()
@@ -287,6 +300,42 @@ local sc = index.scenes(codex_prj)[1]
 local after = table.concat(vim.fn.readfile(sc.path), "\n")
 assert_true(after:find("creatures:\n  %- Gr'hall") ~= nil, "custom type links into its folder-named field")
 vim.fn.delete(codex_project, "rf")
+
+-- Runtime schema merge: project layers override, delete, and add to defaults.
+local schema_proj = vim.fn.tempname()
+vim.fn.mkdir(schema_proj .. "/.storyteller", "p")
+vim.fn.writefile({
+  '{',
+  '  "reference_types": { "item": null },',
+  '  "enums": { "moods": ["tense", "calm"] },',
+  '  "diagnostics": { "unknown_field": false }',
+  '}',
+}, schema_proj .. "/.storyteller/schema.json")
+local loaded = schema.load(schema_proj)
+assert_true(loaded.reference_types.item == nil, "project schema deletes the item type")
+assert_true(vim.deep_equal(loaded.enums, { moods = { "tense", "calm" } }), "project schema adds an enum")
+assert_true(schema.flag("unknown_field") == false, "diagnostics toggle is overridable")
+assert_true(schema.flag("missing_id") == false, "default diagnostics toggles survive merge")
+
+-- Write the merged schema, drop the project layer, and reload from the write.
+local written = schema.write(schema_proj)
+assert_true(vim.loop.fs_stat(written) ~= nil, "schema write creates storyteller.schema.json")
+vim.fn.delete(schema_proj .. "/.storyteller/schema.json")
+schema.invalidate(schema_proj)
+local reloaded = schema.dump(schema_proj)
+assert_true(reloaded.reference_types.item == nil, "schema write round-trip preserves overrides")
+vim.fn.delete(schema_proj, "rf")
+
+-- .storyteller.toml can point at a schema under a custom path.
+local toml_proj = vim.fn.tempname()
+vim.fn.mkdir(toml_proj .. "/config", "p")
+vim.fn.writefile({ '{ "reference_types": { "faction": { "dir": "factions", "label": "Faction", "field": "factions" } } }' }, toml_proj .. "/config/schema.json")
+vim.fn.writefile({ "[storyteller]", 'schema = "config/schema.json"' }, toml_proj .. "/.storyteller.toml")
+local toml_loaded = schema.load(toml_proj)
+assert_true(toml_loaded.reference_types.faction ~= nil, ".storyteller.toml points at a schema")
+assert_true(schema.type_field("factions") == "factions", "custom faction type resolves its field")
+assert_true(schema.type_label("factions") == "Faction", "custom faction type gets its label")
+vim.fn.delete(toml_proj, "rf")
 
 vim.fn.delete(tmp, "rf")
 print(("RESULT: %d passed, %d failed"):format(passed, failed))

@@ -58,6 +58,11 @@ in {
       default = null;
       description = "The storyteller-lsp server binary to wire via vim.lsp.config.";
     };
+    lsp.schema = lib.mkOption {
+      type = lib.types.nullOr lib.types.json;
+      default = null;
+      description = "Inline schema override, passed as initializationOptions.schema.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -80,6 +85,7 @@ in {
         cmd = { "${lib.getExe cfg.lsp.package}" },
         filetypes = { "markdown" },
         root_markers = { ".storyteller", ".git" },
+        ${lib.optionalString (cfg.lsp.schema != null) "init_options = { schema = ${builtins.toJSON cfg.lsp.schema} },"}
       })
       vim.lsp.enable("storyteller")
     '';

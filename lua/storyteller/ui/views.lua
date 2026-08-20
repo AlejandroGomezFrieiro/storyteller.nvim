@@ -12,10 +12,22 @@ local project = require("storyteller.project")
 
 local M = {}
 
+local PARTIAL = { " ", "▏", "▎", "▍", "▌", "▋", "▊", "▉" }
+
 local function bar(pct)
   pct = math.max(0, math.min(100, pct or 0))
-  local filled = math.floor(pct / 10)
-  return string.rep("█", filled) .. string.rep("░", 10 - filled)
+  local units = math.floor(pct / 100 * 80 + 0.5)
+  local full = math.floor(units / 8)
+  local part = units % 8
+  local out = string.rep("█", full)
+  if full < 10 then
+    out = out .. PARTIAL[part + 1] .. string.rep("░", 9 - full)
+  end
+  return out
+end
+
+local function divider()
+  return { text = string.rep("─", 56), hl = "StorytellerDivider" }
 end
 
 local function edit(path)
@@ -54,6 +66,7 @@ function M.outline(prj)
       local lines = {
         { text = "OUTLINE — " .. vim.fn.fnamemodify(prj.root, ":t"), hl = "StorytellerTitle" },
         { text = "<CR> open · a status · R refresh · q close", hl = "StorytellerMuted" },
+        divider(),
       }
       local select = {}
       for _, ch in ipairs(index.chapters(prj)) do
@@ -131,6 +144,7 @@ function M.corkboard(prj, filter)
       local lines = {
         { text = "CORKBOARD — " .. vim.fn.fnamemodify(prj.root, ":t"), hl = "StorytellerTitle" },
         { text = "<CR> open · a status · u unused · R refresh · q close", hl = "StorytellerMuted" },
+        divider(),
       }
       local select = {}
       local lf = filter and filter:lower() or ""
@@ -189,6 +203,7 @@ function M.track(prj)
       local lines = {
         { text = "TRACKING — " .. vim.fn.fnamemodify(prj.root, ":t"), hl = "StorytellerTitle" },
         { text = "<CR> open chapter · s session · p progress · R refresh · q close", hl = "StorytellerMuted" },
+        divider(),
       }
       local select = {}
       lines[#lines + 1] = { text = ("Total words: %d"):format(track.total_words(prj)), hl = "StorytellerMetric" }
@@ -235,6 +250,20 @@ function M.track(prj)
         }
       end
 
+      local balance = track.pov_balance(prj)
+      if #balance.pov_order > 0 then
+        lines[#lines + 1] = { text = "", hl = nil }
+        lines[#lines + 1] = { text = "POV BALANCE", hl = "StorytellerSection" }
+        for _, pov in ipairs(balance.pov_order) do
+          local n = balance.povs[pov]
+          local pct = balance.total_scenes > 0 and math.floor(n / balance.total_scenes * 100) or 0
+          lines[#lines + 1] = {
+            text = ("%-24s %3d scenes  %s"):format(pov, n, bar(pct)),
+            hl = "StorytellerScene",
+          }
+        end
+      end
+
       return { lines = lines, select = select }
     end,
     on_select = function(ch)
@@ -274,6 +303,7 @@ function M.binder(prj)
       local lines = {
         { text = "BINDER", hl = "StorytellerTitle" },
         { text = "<CR> open · R refresh · q close", hl = "StorytellerMuted" },
+        divider(),
       }
       local select = {}
       for _, ch in ipairs(index.chapters(prj)) do

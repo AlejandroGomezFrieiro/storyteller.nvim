@@ -5,6 +5,7 @@
 local project = require("storyteller.project")
 local config = require("storyteller.config")
 local resume = require("storyteller.resume")
+local schema = require("storyteller.schema")
 
 local M = {}
 
@@ -33,6 +34,18 @@ M.setup = function()
     callback = function(ev)
       if vim.b[ev.buf].storyteller_project then
         resume.remember(vim.b[ev.buf].storyteller_project)
+      end
+    end,
+  })
+
+  -- Invalidate the cached merged schema when a schema source is written.
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = group,
+    pattern = { "schema.json", "storyteller.schema.json", ".storyteller.toml" },
+    callback = function(ev)
+      local prj = project.resolve(vim.api.nvim_buf_get_name(ev.buf))
+      if prj then
+        schema.invalidate(prj.root)
       end
     end,
   })

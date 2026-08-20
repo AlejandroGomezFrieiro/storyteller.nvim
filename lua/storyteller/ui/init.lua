@@ -8,20 +8,54 @@ local config = require("storyteller.config")
 
 -- --- Highlight palette (single home for all view colours) --------------------
 
+local palette_done = false
+
 function M.palette()
-  local function link(name, target)
-    vim.api.nvim_set_hl(0, name, { link = target, default = true })
+  if palette_done then
+    return
   end
-  link("StorytellerTitle", "Title")
-  link("StorytellerSection", "Special")
-  link("StorytellerScene", "Identifier")
-  link("StorytellerMuted", "Comment")
-  link("StorytellerMetric", "Number")
-  link("StorytellerOutline", "Comment")
-  link("StorytellerDraft", "String")
-  link("StorytellerRevision", "WarningMsg")
-  link("StorytellerDone", "DiagnosticOk")
-  link("StorytellerUnused", "DiagnosticError")
+  palette_done = true
+
+  -- Derive a group from a built-in target, carrying its colour forward while
+  -- layering on attributes (bold/italic/underline). Falls back to a plain link
+  -- when the target has no resolvable foreground.
+  local function style(name, target, opts)
+    opts = opts or {}
+    local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = target, link = false })
+    local def = { default = true }
+    if ok and hl and hl.fg then
+      def.fg = hl.fg
+      if opts.bg and hl.bg then
+        def.bg = hl.bg
+      end
+    else
+      def.link = target
+    end
+    if opts.bold then
+      def.bold = true
+    end
+    if opts.italic then
+      def.italic = true
+    end
+    if opts.underline then
+      def.underline = true
+    end
+    vim.api.nvim_set_hl(0, name, def)
+  end
+
+  style("StorytellerTitle", "Title", { bold = true })
+  style("StorytellerSection", "Special", { bold = true })
+  style("StorytellerScene", "Identifier")
+  style("StorytellerMuted", "Comment", { italic = true })
+  style("StorytellerMetric", "Number", { bold = true })
+  style("StorytellerKey", "Keyword", { bold = true })
+  style("StorytellerDivider", "Comment")
+  style("StorytellerBar", "Comment")
+  style("StorytellerOutline", "Comment")
+  style("StorytellerDraft", "String")
+  style("StorytellerRevision", "WarningMsg")
+  style("StorytellerDone", "DiagnosticOk")
+  style("StorytellerUnused", "DiagnosticError")
 end
 
 local function has(mod)
@@ -84,6 +118,26 @@ function M.render_view(buf, lines, select)
   return select
 end
 
+-- Normalize one render line into a list of { text, hl? } runs. A line may be a
+-- plain string, a single `{ text, hl }`, or `{ segments = { {text, hl}, ... } }`.
+local function runs(item)
+  if type(item) == "table" and type(item.segments) == "table" then
+    local out = {}
+    for _, seg in ipairs(item.segments) do
+      if type(seg) == "table" then
+        out[#out + 1] = { text = seg.text or "", hl = seg.hl }
+      else
+        out[#out + 1] = { text = seg, hl = nil }
+      end
+    end
+    return out
+  end
+  if type(item) == "table" then
+    return { { text = item.text or "", hl = item.hl } }
+  end
+  return { { text = item, hl = nil } }
+end
+
 -- Render via morph.nvim (declarative, reconciled). Returns false to fall back.
 local morph_renderers = {}
 
@@ -101,12 +155,12 @@ function M.morph_render(buf, lines)
     if i > 1 then
       tree[#tree + 1] = "\n"
     end
-    local text = type(item) == "table" and (item.text or "") or item
-    local hl = type(item) == "table" and item.hl or nil
-    if hl then
-      tree[#tree + 1] = h("text", { hl = hl }, text)
-    else
-      tree[#tree + 1] = text
+    for _, run in ipairs(runs(item)) do
+      if run.hl then
+        tree[#tree + 1] = h("text", { hl = run.hl }, run.text)
+      else
+        tree[#tree + 1] = run.text
+      end
     end
   end
   local renderer = morph_renderers[buf]
@@ -134,20 +188,26 @@ end
 function M.buffer_render(buf, lines)
   vim.bo[buf].modifiable = true
   local text = {}
+  local flat = {}
   for _, item in ipairs(lines) do
-    if type(item) == "table" then
-      text[#text + 1] = item.text or ""
-    else
-      text[#text + 1] = item
+    local line = {}
+    for _, run in ipairs(runs(item)) do
+      line[#line + 1] = run.text
     end
+    text[#text + 1] = table.concat(line)
+    flat[#flat + 1] = runs(item)
   end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, text)
 
   local ns = vim.api.nvim_create_namespace("storyteller.ui")
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  for i, item in ipairs(lines) do
-    if type(item) == "table" and item.hl then
-      vim.api.nvim_buf_add_highlight(buf, ns, item.hl, i - 1, 0, -1)
+  for i, line_runs in ipairs(flat) do
+    local col = 0
+    for _, run in ipairs(line_runs) do
+      if run.hl then
+        vim.api.nvim_buf_add_highlight(buf, ns, run.hl, i - 1, col, col + #run.text)
+      end
+      col = col + #run.text
     end
   end
   vim.bo[buf].modifiable = false

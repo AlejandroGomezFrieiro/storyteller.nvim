@@ -28,7 +28,7 @@ function M.open(prj)
       local lines = {
         { text = "STORYTELLER", hl = "StorytellerTitle" },
         { text = "<CR> run · q close", hl = "StorytellerMuted" },
-        { text = "", hl = nil },
+        { text = string.rep("─", 56), hl = "StorytellerDivider" },
       }
       local chapters = index.chapters(prj)
       local scenes = index.scenes(prj)
@@ -69,7 +69,12 @@ function M.open(prj)
 
       local select = {}
       for _, a in ipairs(actions) do
-        lines[#lines + 1] = { text = ("[%s] %s"):format(a.key, a.name), hl = "StorytellerScene" }
+        lines[#lines + 1] = {
+          segments = {
+            { text = ("  [%s] "):format(a.key), hl = "StorytellerKey" },
+            { text = a.name, hl = "StorytellerScene" },
+          },
+        }
         select[#lines] = a.run
       end
       return { lines = lines, select = select }

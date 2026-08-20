@@ -154,37 +154,88 @@ current chapter, grouped by their chapter `#` heading.
 1. **Create a card** for an unknown word/selection — one action per known type
    (Character, Location, Item, Organization, plus any codex folders), writing a
    templated card (`---\nnames:\n  - …\n---\n\n## …`) into
-   `references/<type>/<slug>.md`.
+   `references/<type>/<slug>.md` — and, when the cursor is inside a scene block,
+   **link it to that scene** in the same edit.
 2. **Link to this scene** — for a name that already resolves to a card, appends
    the canonical card name to the enclosing scene block's list field
    (`chars`/`locs`/`items`/`orgs`, or `creatures:`/… for custom types), creating
    the key if needed and de-duplicating case-insensitively.
+3. **Cycle status** — advance the scene's `status:` to the next workflow state.
+4. **Add setup/payoff** — insert a `setup:`/`payoff:` line for each known
+   plot-thread key not already in the scene.
+5. **Promote section to scene** — insert a ` ```yaml storyteller: scene ``` `
+   block under the `## ` heading (when none exists).
 
 ![Create a card from an uncarded prose name](assets/06-lsp-create-card.gif)
 
 ### Diagnostics
 
-`didChange`/`didSave`/`didChangeWatchedFiles` publish hints:
+`didOpen`/`didSave`/`didChangeWatchedFiles` publish hints and warnings, each
+gated by a `diagnostics` toggle in the schema (see
+[`docs/schema.md`](schema.md)):
 
 | Diagnostic | Severity | Meaning |
 | --- | --- | --- |
 | `No reference card for "…"` | HINT | A capitalized token in prose has no card — run the create-card code action. |
 | `"…" is never mentioned` | HINT | A card exists but no chapter mentions its names (unused card). |
+| `Scene id "…" is used by N scenes` | WARNING | Duplicate scene `id:` — ids must be unique. |
+| `Scene has a goal but no conflict / outcome` | HINT | A beat is half-formed. |
+| `Scene runs N words against a target of M` | HINT | A scene runs far over its `target:`. |
+| `Listed but not mentioned in this scene: …` | HINT | A `chars:` entry never appears in that scene's prose. |
+| `Timeline moves backwards: day N after day M` | HINT | Numeric `day:`/`time:` values decrease in document order. |
+| `Unknown scene field(s): …` | WARNING | A key in a scene block is not in the schema's `scene_fields`. |
+| `Invalid enum value(s): …` | WARNING | An enum-typed field (e.g. `status:`) holds a value outside its list. |
+| `setup "…" has no matching payoff` | HINT | A plot thread is unresolved. |
+| `Alias "…" maps to multiple cards` | HINT | Two cards share a normalized alias. |
+| `Missing required field(s) on card: …` | HINT | A card lacks a bullet required by its type's `min_fields`. |
 
-Diagnostics are hint-level by design: they nudge, they never warn-bomb a first
-draft.
+Hints nudge, they never warn-bomb a first draft. Warnings flag real corruption
+(duplicate ids, out-of-schema fields); every gate is configurable per-project.
 
 ---
 
 ## Index freshness
 
-The server is **rescan-on-demand**, not watch-based:
+The server registers `workspace/didChangeWatchedFiles` on startup (globs for
+the schema sources, `references/**`, and `chapters/**`):
 
 - `didOpen` / `didChange` keep the open buffer's text in memory,
 - `didSave` and `didChangeWatchedFiles` trigger a full rescan + diagnostics republish.
 
 So edits in another editor, or new card files dropped in `references/`, appear
-after you save a chapter or any watched file.
+after a save or a watched-file change — including edits to a project schema.
+
+## Schema override
+
+The vocabulary (fields, enum values, reference types, diagnostics toggles) is
+**schema-driven at runtime**. Three layers merge per key, lowest to highest:
+
+1. Embedded defaults (`server/schema.json`).
+2. A project file, first match wins: `.storyteller/schema.json` →
+   `storyteller.schema.json` → `.storyteller.toml` (`[storyteller] schema = "path"`).
+3. A client override passed as `initializationOptions.schema` (wired through
+   `storyteller.lsp.schema` in the nixvim module).
+
+Objects merge per key; scalars and arrays replace; `null` or `{"remove": true}`
+deletes a key at any level. See [`docs/schema.md`](schema.md) for the full
+reference and per-client setup.
+
+## CLI
+
+The same binary runs headless — no editor needed:
+
+```sh
+storyteller-lsp report       --project .      # words, statuses, field coverage
+storyteller-lsp check        --project .      # every diagnostic (exit 1 on warning)
+storyteller-lsp check --json --project .      # machine-readable
+storyteller-lsp index        --project .      # resolved names + aliases
+storyteller-lsp completions  --project .      # completion catalog
+storyteller-lsp version
+```
+
+`check` exits 0 when clean, 1 on any warning-or-above, and 2 on a usage error.
+Hints never fail CI — gates sit on warnings only. `--json` switches all commands
+to JSON output. With no subcommand, the server runs the LSP loop over stdio.
 
 ---
 

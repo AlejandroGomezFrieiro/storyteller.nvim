@@ -132,3 +132,14 @@ pub fn value_to_list(v: &Value) -> Vec<String> {
         _ => Vec::new(),
     }
 }
+
+// A numeric "story day": `time:` / `day:` values that are a bare number (or a
+// numeric string) participate in timeline ordering; everything else is free
+// text and never order-compares.
+pub fn parse_story_day(v: &Value) -> Option<i64> {
+    match v {
+        Value::Number(n) => n.as_i64(),
+        Value::String(s) => s.trim().parse::<i64>().ok(),
+        _ => None,
+    }
+}
