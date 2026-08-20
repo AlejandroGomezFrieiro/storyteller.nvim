@@ -17,6 +17,8 @@ storyteller: scene
 status: draft
 pov: Odysseus
 location: Ithaca
+day: 1
+setup: storm-warning
 beat: A warning arrives too late.
 ```
 
@@ -29,6 +31,8 @@ stone quay with a sealed letter and no dry place left to hide it.
 storyteller: scene
 pov: Odysseus
 location: Ithaca
+day: 2
+payoff: storm-warning
 beat: Leave before the tide turns.
 ```
 

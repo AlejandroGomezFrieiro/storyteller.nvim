@@ -15,7 +15,8 @@ comfortable to work with.
 
 ## What You Get
 
-- A dashboard, outline, corkboard, workspace, and scene picker.
+- A project dashboard, outline, card-based corkboard, timeline, plot-thread
+  planner, story-health review, workspace, and scene picker.
 - Scene metadata for status, point of view, location, beats, and targets.
 - Reference cards for characters, places, objects, organizations, and your own
   categories.
@@ -25,6 +26,12 @@ comfortable to work with.
 - Story structure templates for planning a new project.
 - An optional prose-aware language server for navigation, completion, and
   reference cards.
+
+The language-server approach is strongly informed by
+[markdown-oxide](https://github.com/Feel-ix-343/markdown-oxide): an LSP is a
+natural way to make Markdown-aware navigation, completion, references, and
+rename feel native inside Neovim. Storyteller takes that idea into a
+story-specific model of scenes, prose names, aliases, and reference cards.
 
 ![Storyteller workspace](docs/assets/storyteller.gif)
 
@@ -97,7 +104,9 @@ Most days can be as simple as:
 5. Run `:Story compile` when you want to read the manuscript continuously.
 
 Storyteller is meant to disappear while you write and reappear when structure,
-context, or progress becomes useful.
+context, or progress becomes useful. When you need a wider view, `:Story
+timeline` follows story time, `:Story threads` follows setup and payoff fields,
+and `:Story health` collects gentle review prompts without changing your draft.
 
 ## Commands
 
@@ -112,6 +121,9 @@ opens a searchable command list.
 | `:Story next` / `prev` | Move between scenes. |
 | `:Story resume` | Return to the last scene you visited. |
 | `:Story corkboard` | Review scenes as cards. |
+| `:Story timeline` | Review scenes in story-time order. |
+| `:Story threads` | Follow plot setups through their payoffs. |
+| `:Story health` | Find loose ends and scenes worth revisiting. |
 | `:Story workspace` | Toggle the binder and inspector. |
 | `:Story meta` | Edit the current scene's metadata. |
 | `:Story status` | Set or cycle the current scene's status. |
@@ -200,6 +212,10 @@ affiliated with, endorsed by, or a replacement for the projects below.
 - [obsidian.nvim](https://github.com/obsidian-nvim/obsidian.nvim) and
   [Neorg](https://github.com/nvim-neorg/neorg) informed the modular Neovim and
   Markdown-first design.
+- [markdown-oxide](https://github.com/Feel-ix-343/markdown-oxide) was a major
+  inspiration for the LSP-based approach to Markdown navigation, completion,
+  references, and rename. Storyteller applies those ideas to a writing project
+  model built around scenes and reference cards.
 - [obsidian-storyline](https://github.com/PixeroJan/obsidian-storyline) inspired
   arbitrary, user-defined reference categories.
 - [morph.nvim](https://github.com/jrop/morph.nvim) is vendored as the reactive

@@ -1,6 +1,11 @@
 -- storyteller.ui.views
--- Concrete views: outline, corkboard, tracking dashboard, binder, inspector.
--- Each builds `lines` + a `select` map and hands them to `ui.view`.
+-- Concrete views: dashboard panels, outline, corkboard, tracking, timeline,
+-- plot threads, story health, binder, inspector. Each builds `lines` + a
+-- `select` map and hands them to `ui.view`.
+--
+-- The visual language is inspired by triforce.nvim: titled bordered panels,
+-- a bordered stats grid, segmented progress bars, and a GitHub-style
+-- contribution heatmap with month and weekday labels.
 
 local index = require("storyteller.index")
 local meta = require("storyteller.meta")
@@ -14,20 +19,46 @@ local M = {}
 
 local PARTIAL = { " ", "▏", "▎", "▍", "▌", "▋", "▊", "▉" }
 
-local function bar(pct)
+local function bar(pct, width)
   pct = math.max(0, math.min(100, pct or 0))
-  local units = math.floor(pct / 100 * 80 + 0.5)
+  width = width or 20
+  local units = math.floor(pct / 100 * width * 8 + 0.5)
   local full = math.floor(units / 8)
   local part = units % 8
   local out = string.rep("█", full)
-  if full < 10 then
-    out = out .. PARTIAL[part + 1] .. string.rep("░", 9 - full)
+  if full < width then
+    out = out .. PARTIAL[part + 1] .. string.rep("░", width - full - 1)
   end
   return out
 end
 
-local function divider()
-  return { text = string.rep("─", 56), hl = "StorytellerDivider" }
+local function num(n)
+  local s = tostring(math.floor(n or 0))
+  local t = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+  if t:sub(-1) == "," then
+    t = t:sub(1, -2)
+  end
+  return t
+end
+
+local function footer(text)
+  return { text = "  " .. text, hl = "StorytellerMuted" }
+end
+
+local function heat_hl(delta)
+  if not delta or delta <= 0 then
+    return "StorytellerHeat0"
+  end
+  if delta < 250 then
+    return "StorytellerHeat1"
+  end
+  if delta < 750 then
+    return "StorytellerHeat2"
+  end
+  if delta < 1500 then
+    return "StorytellerHeat3"
+  end
+  return "StorytellerHeat4"
 end
 
 local function edit(path)
@@ -55,6 +86,194 @@ local function cycle_status(data)
   end
 end
 
+-- Resolve a select entry at the cursor. Entries may be plain data or a
+-- function(col) for side-by-side panel layouts.
+local function at_cursor(select)
+  local line, col = vim.api.nvim_win_get_cursor(0)
+  local data = select and select[line]
+  if type(data) == "function" then
+    -- Cursor columns are byte offsets, while panel bounds are display columns.
+    -- Convert before hit-testing cards containing Unicode borders/separators.
+    local text = vim.api.nvim_get_current_line()
+    return data(vim.fn.strdisplaywidth(text:sub(1, col)))
+  end
+  return data
+end
+
+-- --- Shared Triforce-style builders -----------------------------------------
+
+-- Header block: title, project subtitle, key metrics, and the manuscript
+-- progress bar.
+function M.header(prj, title, subtitle)
+  local chapters = index.chapters(prj)
+  local scenes = index.scenes(prj)
+  local words = track.total_words(prj)
+  local target = 0
+  for _, ch in ipairs(chapters) do
+    target = target + (ch.target or 0)
+  end
+  local streaks = track.streaks(prj)
+  local pct = target > 0 and math.floor(words / target * 100) or 0
+  local lines = {}
+  lines[#lines + 1] = { text = "  ✦  " .. title, hl = "StorytellerTitle" }
+  lines[#lines + 1] = {
+    segments = {
+      { text = "  " .. vim.fn.fnamemodify(prj.root, ":t"), hl = "StorytellerAccent" },
+      { text = "  ·  " .. subtitle, hl = "StorytellerMuted" },
+    },
+  }
+  lines[#lines + 1] = { text = "", hl = nil }
+  lines[#lines + 1] = {
+    segments = {
+      { text = "  ◈ ", hl = "StorytellerMetric" },
+      { text = num(words) .. " words", hl = "StorytellerMetric" },
+      { text = "     ◌ ", hl = "StorytellerMetric" },
+      { text = streaks.current .. " day streak", hl = "StorytellerMetric" },
+      { text = "     ◆ ", hl = "StorytellerMetric" },
+      { text = #chapters .. " chapters · " .. #scenes .. " scenes", hl = "StorytellerMetric" },
+    },
+  }
+  lines[#lines + 1] = {
+    segments = {
+      { text = "  " .. bar(pct, 36), hl = "StorytellerBar" },
+      {
+        text = string.format("  %d%%%s", pct, target > 0 and (" of " .. num(target)) or ""),
+        hl = "StorytellerMuted",
+      },
+    },
+  }
+  lines[#lines + 1] = { text = "", hl = nil }
+  return lines
+end
+
+-- Bordered stats grid (Triforce "Stats" table).
+function M.stats_table(prj)
+  local chapters = index.chapters(prj)
+  local scenes = index.scenes(prj)
+  local words = track.total_words(prj)
+  local target = 0
+  for _, ch in ipairs(chapters) do
+    target = target + (ch.target or 0)
+  end
+  local streaks = track.streaks(prj)
+  local activity = track.activity_summary(prj)
+  local cols = {
+    { label = "Chapters", width = 10 },
+    { label = "Scenes", width = 8 },
+    { label = "Words", width = 12 },
+    { label = "Target", width = 12 },
+    { label = "Streak", width = 14 },
+    { label = "Active days", width = 12 },
+  }
+  local function row(values, hl)
+    local segs = {}
+    for i, c in ipairs(cols) do
+      segs[#segs + 1] = { text = string.format("%-" .. c.width .. "s", values[i]), hl = hl }
+    end
+    return { segments = segs }
+  end
+  return ui.grid_panels({
+    {
+      title = "PROJECT",
+      rows = {
+        row({
+          "Chapters",
+          "Scenes",
+          "Words",
+          "Target",
+          "Streak",
+          "Active days",
+        }, "StorytellerTableHeader"),
+        row({
+          tostring(#chapters),
+          tostring(#scenes),
+          num(words),
+          target > 0 and num(target) or "—",
+          streaks.current .. " / " .. streaks.longest,
+          tostring(activity.active_days),
+        }, "StorytellerMetric"),
+      },
+    },
+  })
+end
+
+-- GitHub-style contribution heatmap with month and weekday labels.
+function M.activity_panel(prj)
+  local weeks = require("storyteller.config").get().heatmap_weeks
+  local grid = track.week_grid(prj, weeks)
+  local dow_names = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
+  local content_width = 4 + grid.weeks * 2
+  local rows = {}
+
+  -- Month label row. Skip a label when it would collide with the previous
+  -- one (month names are wider than a single week column).
+  local month_segs = { { text = "    ", hl = nil } }
+  local pos = 1
+  for w = 1, grid.weeks do
+    if grid.months[w] then
+      local start = (w - 1) * 2 + 1
+      if start >= pos then
+        if start > pos then
+          month_segs[#month_segs + 1] = { text = string.rep(" ", start - pos), hl = nil }
+        end
+        month_segs[#month_segs + 1] = { text = grid.months[w], hl = "StorytellerTableHeader" }
+        pos = start + #grid.months[w]
+      end
+    end
+  end
+  rows[#rows + 1] = { segments = month_segs }
+
+  -- Weekday rows.
+  for d = 0, 6 do
+    local segs = { { text = string.format("%-4s", dow_names[d + 1]), hl = "StorytellerMuted" } }
+    for w = 1, grid.weeks do
+      local cell = grid.grid[w][d]
+      if cell then
+        segs[#segs + 1] = { text = "■ ", hl = heat_hl(cell.delta) }
+      else
+        segs[#segs + 1] = { text = "  ", hl = nil }
+      end
+    end
+    rows[#rows + 1] = { segments = segs }
+  end
+
+  -- Legend row, right aligned.
+  local legend = "Less ■ ■ ■ ■ More"
+  local legend_segs = {
+    { text = string.rep(" ", math.max(0, content_width - #legend)), hl = nil },
+    { text = "Less ", hl = "StorytellerMuted" },
+    { text = "■", hl = "StorytellerHeat1" },
+    { text = " ", hl = nil },
+    { text = "■", hl = "StorytellerHeat2" },
+    { text = " ", hl = nil },
+    { text = "■", hl = "StorytellerHeat3" },
+    { text = " ", hl = nil },
+    { text = "■", hl = "StorytellerHeat4" },
+    { text = " More", hl = "StorytellerMuted" },
+  }
+  rows[#rows + 1] = { segments = legend_segs }
+
+  return ui.grid_panels({ { title = "ACTIVITY", rows = rows } })
+end
+
+-- Milestones laid out three across, achievement-style.
+function M.milestones_panel(prj)
+  local ms = track.milestones(prj)
+  local rows = {}
+  for i = 1, #ms, 3 do
+    local segs = {}
+    for j = i, math.min(i + 2, #ms) do
+      local m = ms[j]
+      segs[#segs + 1] = {
+        text = string.format("%-24s", (m.done and "✓ " or "○ ") .. m.name),
+        hl = m.done and "StorytellerDone" or "StorytellerOutline",
+      }
+    end
+    rows[#rows + 1] = { segments = segs }
+  end
+  return ui.grid_panels({ { title = "MILESTONES", rows = rows } })
+end
+
 -- --- Outline ----------------------------------------------------------------
 
 function M.outline(prj)
@@ -63,20 +282,39 @@ function M.outline(prj)
     name = "outline",
     prj = prj,
     build = function()
-      local lines = {
-        { text = "OUTLINE — " .. vim.fn.fnamemodify(prj.root, ":t"), hl = "StorytellerTitle" },
-        { text = "<CR> open · a status · R refresh · q close", hl = "StorytellerMuted" },
-        divider(),
-      }
+      local lines = {}
       local select = {}
-      for _, ch in ipairs(index.chapters(prj)) do
+      for _, l in ipairs(M.header(prj, "OUTLINE", "chapter by chapter")) do
+        lines[#lines + 1] = l
+      end
+      local chapters = index.chapters(prj)
+      local rows = {}
+      for _, ch in ipairs(chapters) do
         local words = index.chapter_words(ch)
         local target = ch.target or 0
         local pct = target > 0 and math.floor(words / target * 100) or 0
-        local text = ("%-34s %6d w  %s %3d%%"):format(ch.title or ch.filename, words, bar(pct), pct)
-        lines[#lines + 1] = { text = text, hl = "StorytellerScene" }
-        select[#lines] = ch
+        rows[#rows + 1] = {
+          segments = {
+            { text = string.format("%-26s", ch.title or ch.filename), hl = "StorytellerScene" },
+            { text = string.format("%6d w  ", words), hl = "StorytellerMuted" },
+            { text = bar(pct, 20), hl = "StorytellerBar" },
+            {
+              text = string.format(" %3d%%%s", pct, target > 0 and string.format("  %s/%s", num(words), num(target)) or ""),
+              hl = "StorytellerMuted",
+            },
+          },
+        }
       end
+      local panel = ui.grid_panels({ { title = "CHAPTERS", rows = rows } })
+      local offset = #lines
+      for _, l in ipairs(panel) do
+        lines[#lines + 1] = l
+      end
+      for i, ch in ipairs(chapters) do
+        select[offset + 1 + i] = ch
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      lines[#lines + 1] = footer("<CR> open   a status   R refresh   q close")
       return { lines = lines, select = select }
     end,
     on_select = function(ch)
@@ -84,7 +322,7 @@ function M.outline(prj)
     end,
     keys = { a = function()
       local sel = vim.b[vim.api.nvim_get_current_buf()].storyteller_select
-      local data = sel[vim.api.nvim_win_get_cursor(0)[1]]
+      local data = at_cursor(sel)
       if data then
         cycle_status(data)
       end
@@ -135,51 +373,151 @@ end
 
 -- --- Corkboard --------------------------------------------------------------
 
+local CARD_WIDTH = 34
+local CARD_OUTER_WIDTH = CARD_WIDTH + 4
+
+-- Truncate to `width` characters and right-pad with spaces so that every card
+-- row lines up regardless of multibyte glyphs.
+local function fit(text, width)
+  text = tostring(text or "")
+  local cl = vim.fn.strchars(text)
+  if cl > width then
+    return vim.fn.strcharpart(text, 0, width - 1) .. "…"
+  end
+  return text .. string.rep(" ", width - cl)
+end
+
+local function card_row(text, hl)
+  return {
+    segments = {
+      { text = "│ ", hl = "StorytellerCardBorder" },
+      { text = fit(text, CARD_WIDTH), hl = hl or "StorytellerScene" },
+      { text = " │", hl = "StorytellerCardBorder" },
+    },
+  }
+end
+
+local function scene_card(scene, number)
+  local info = meta.scene(scene)
+  local m = info.meta
+  local status = m.status or "outline"
+  local status_hl = ui.status_hl(status) or "StorytellerScene"
+  local ch_title = scene.chapter
+    and (scene.chapter.title or vim.fn.fnamemodify(scene.path, ":t:r"))
+    or "?"
+  local label = string.format("SCENE %02d", number or 0)
+  local top_prefix = "╭─ " .. label .. " "
+  local lines = {}
+  lines[#lines + 1] = {
+    text = top_prefix
+      .. string.rep("─", CARD_OUTER_WIDTH - vim.fn.strdisplaywidth(top_prefix) - 1)
+      .. "╮",
+    hl = "StorytellerCardBorder",
+  }
+  lines[#lines + 1] = card_row(scene.title or "Untitled", "StorytellerCardTitle")
+  lines[#lines + 1] = card_row(
+    string.format("%s · %s", ch_title, status:upper()),
+    status_hl
+  )
+  lines[#lines + 1] = card_row(
+    string.format("%s · %s", m.pov or "—", m.location or "—"),
+    "StorytellerCardMeta"
+  )
+  lines[#lines + 1] = card_row(m.beat or m.goal or "No beat recorded.")
+  lines[#lines + 1] = card_row(
+    string.format("%d words%s", scene.words or 0, m.target and (" · target " .. tostring(m.target)) or ""),
+    "StorytellerMetric"
+  )
+  lines[#lines + 1] = {
+    text = "╰" .. string.rep("─", CARD_WIDTH + 2) .. "╯",
+    hl = "StorytellerCardBorder",
+  }
+  return lines
+end
+
 function M.corkboard(prj, filter)
   prj = prj or project.current()
   ui.view({
     name = "corkboard",
     prj = prj,
     build = function()
-      local lines = {
-        { text = "CORKBOARD — " .. vim.fn.fnamemodify(prj.root, ":t"), hl = "StorytellerTitle" },
-        { text = "<CR> open · a status · u unused · R refresh · q close", hl = "StorytellerMuted" },
-        divider(),
-      }
-      local select = {}
       local lf = filter and filter:lower() or ""
+      local scenes = {}
       for _, sc in ipairs(index.scenes(prj)) do
         local info = meta.scene(sc)
-        local status = info.meta.status or "outline"
-        local pov = info.meta.pov or "?"
-        local loc = info.meta.location
-        local label = ("%-28s · %-12s · %4d w%s"):format(
-          sc.title or "(untitled)",
-          pov,
-          sc.words or 0,
-          loc and (" · " .. loc) or ""
-        )
+        local m = info.meta
+        local label = string.format("%s %s %s %s",
+          sc.title or "",
+          m.pov or "",
+          m.location or "",
+          sc.chapter and (sc.chapter.title or "") or "")
         if lf == "" or label:lower():find(lf, 1, true) then
-          lines[#lines + 1] = { text = label, hl = ui.status_hl(status) or "StorytellerScene" }
-          select[#lines] = sc
+          scenes[#scenes + 1] = sc
         end
       end
+      -- Keep the board compact: unlike tracking, its content is the cards.
+      local lines = {
+        { text = "  ✦  CORKBOARD", hl = "StorytellerTitle" },
+        {
+          segments = {
+            { text = "  " .. vim.fn.fnamemodify(prj.root, ":t"), hl = "StorytellerAccent" },
+            { text = "  ·  the shape of the story", hl = "StorytellerMuted" },
+          },
+        },
+        { text = "  " .. #scenes .. " scene cards", hl = "StorytellerMuted" },
+      }
+      local select = {}
+      local two_col = vim.o.columns >= CARD_OUTER_WIDTH * 2 + 1
+      local columns = two_col and { {}, {} } or { {} }
+      local column_scenes = two_col and { {}, {} } or { {} }
+      for i, sc in ipairs(scenes) do
+        local c = two_col and ((i - 1) % 2) + 1 or 1
+        for _, line in ipairs(scene_card(sc, i)) do
+          columns[c][#columns[c] + 1] = line
+          column_scenes[c][#column_scenes[c] + 1] = sc
+        end
+        columns[c][#columns[c] + 1] = { text = "" }
+        -- `false` preserves the row in the Lua array. A nil value would be
+        -- discarded by the length operator and shift later card mappings.
+        column_scenes[c][#column_scenes[c] + 1] = false
+      end
+      local merged, bounds = ui.compose_columns(columns, 1)
+      local offset = #lines
+      for _, line in ipairs(merged) do
+        lines[#lines + 1] = line
+      end
+      for r = 1, #merged do
+        select[offset + r] = function(col)
+          if two_col then
+            if col + 1 < bounds[2].start then
+              return column_scenes[1][r]
+            end
+            return column_scenes[2][r]
+          end
+          return column_scenes[1][r]
+        end
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      lines[#lines + 1] = footer("<CR> open   a status   u unused   R refresh   q close")
       return { lines = lines, select = select }
     end,
-    on_select = function(sc)
-      index.open_scene(sc)
+    on_select = function(data)
+      local sc = type(data) == "function" and at_cursor(vim.b[vim.api.nvim_get_current_buf()].storyteller_select) or data
+      if sc then
+        index.open_scene(sc)
+      end
     end,
     keys = {
       a = function()
         local sel = vim.b[vim.api.nvim_get_current_buf()].storyteller_select
-        local sc = sel[vim.api.nvim_win_get_cursor(0)[1]]
+        local sc = at_cursor(sel)
         if sc then
           cycle_status(sc)
         end
       end,
       u = function()
         local sel = vim.b[vim.api.nvim_get_current_buf()].storyteller_select
-        local sc = sel[vim.api.nvim_win_get_cursor(0)[1]]
+        local sc = at_cursor(sel)
         if sc then
           meta.scene_write(sc, { status = "unused" })
           local fn = vim.b[vim.api.nvim_get_current_buf()].storyteller_refresh
@@ -192,6 +530,155 @@ function M.corkboard(prj, filter)
   })
 end
 
+-- --- Timeline ---------------------------------------------------------------
+
+function M.timeline(prj)
+  prj = prj or project.current()
+  ui.view({
+    name = "timeline",
+    prj = prj,
+    build = function()
+      local lines = {}
+      local select = {}
+      for _, l in ipairs(M.header(prj, "TIMELINE", "story time")) do
+        lines[#lines + 1] = l
+      end
+      local scenes = index.timeline(prj)
+      local rows = {}
+      for _, scene in ipairs(scenes) do
+        local value = scene.timeline_value and tostring(scene.timeline_value) or "unplaced"
+        local regression = scene.timeline_regression
+        local segs = {}
+        segs[#segs + 1] = { text = (regression and "! " or "◆ "), hl = regression and "StorytellerRevision" or "StorytellerAccent" }
+        segs[#segs + 1] = { text = string.format("%-10s", value), hl = "StorytellerTableHeader" }
+        segs[#segs + 1] = { text = string.format("%-28s", scene.title or "Untitled"), hl = regression and "StorytellerRevision" or "StorytellerScene" }
+        segs[#segs + 1] = { text = string.format("%-14s", scene.meta and (scene.meta.pov or "") or ""), hl = "StorytellerCardMeta" }
+        if regression then
+          segs[#segs + 1] = { text = "moves backward", hl = "StorytellerRevision" }
+        end
+        rows[#rows + 1] = { segments = segs }
+      end
+      local panel = ui.grid_panels({ { title = "STORY ORDER", rows = rows } })
+      local offset = #lines
+      for _, l in ipairs(panel) do
+        lines[#lines + 1] = l
+      end
+      for i, scene in ipairs(scenes) do
+        select[offset + 1 + i] = scene
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      lines[#lines + 1] = footer("numeric days are ordered · free-form time keeps manuscript order · <CR> open   R refresh   q close")
+      return { lines = lines, select = select }
+    end,
+    on_select = function(scene)
+      index.open_scene(scene)
+    end,
+  })
+end
+
+-- --- Plot threads -----------------------------------------------------------
+
+function M.threads(prj)
+  prj = prj or project.current()
+  ui.view({
+    name = "threads",
+    prj = prj,
+    build = function()
+      local lines = {}
+      local select = {}
+      for _, l in ipairs(M.header(prj, "PLOT THREADS", "setup → payoff")) do
+        lines[#lines + 1] = l
+      end
+      local threads = index.plot_threads(prj)
+      local rows = {}
+      local row_scenes = {}
+      for _, thread in ipairs(threads) do
+        local first = thread.setup[1] or thread.payoff[1]
+        local done = thread.state == "complete"
+        rows[#rows + 1] = {
+          segments = {
+            { text = (done and "✓ " or "○ "), hl = done and "StorytellerDone" or "StorytellerRevision" },
+            { text = string.format("%-24s", thread.key), hl = "StorytellerScene" },
+            { text = string.format("%-14s", thread.state), hl = done and "StorytellerDone" or "StorytellerRevision" },
+            { text = first and (first.title or "scene") or "—", hl = "StorytellerCardMeta" },
+          },
+        }
+        row_scenes[#row_scenes + 1] = first
+      end
+      if #threads == 0 then
+        rows[#rows + 1] = { text = "No setup or payoff fields yet.", hl = "StorytellerMuted" }
+      end
+      local panel = ui.grid_panels({ { title = "SETUP → PAYOFF", rows = rows } })
+      local offset = #lines
+      for _, l in ipairs(panel) do
+        lines[#lines + 1] = l
+      end
+      for i, scene in ipairs(row_scenes) do
+        if scene then
+          select[offset + 1 + i] = scene
+        end
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      lines[#lines + 1] = footer("<CR> open scene   R refresh   q close")
+      return { lines = lines, select = select }
+    end,
+    on_select = function(scene)
+      index.open_scene(scene)
+    end,
+  })
+end
+
+-- --- Story health -----------------------------------------------------------
+
+function M.health(prj)
+  prj = prj or project.current()
+  ui.view({
+    name = "health",
+    prj = prj,
+    build = function()
+      local lines = {}
+      local select = {}
+      for _, l in ipairs(M.header(prj, "STORY HEALTH", "loose ends")) do
+        lines[#lines + 1] = l
+      end
+      local findings = index.story_health(prj)
+      local rows = {}
+      local row_scenes = {}
+      if #findings == 0 then
+        rows[#rows + 1] = { text = "✓  Everything looks tidy.", hl = "StorytellerDone" }
+      else
+        for _, finding in ipairs(findings) do
+          local scene = finding.scene
+          rows[#rows + 1] = {
+            segments = {
+              { text = "○ ", hl = "StorytellerRevision" },
+              { text = string.format("%-24s", finding.label), hl = "StorytellerRevision" },
+              { text = scene and (scene.title or "scene") or (finding.thread and finding.thread.key or ""), hl = "StorytellerCardMeta" },
+            },
+          }
+          row_scenes[#row_scenes + 1] = scene
+        end
+      end
+      local panel = ui.grid_panels({ { title = "NEEDS ATTENTION", rows = rows } })
+      local offset = #lines
+      for _, l in ipairs(panel) do
+        lines[#lines + 1] = l
+      end
+      for i, scene in ipairs(row_scenes) do
+        if scene then
+          select[offset + 1 + i] = scene
+        end
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      lines[#lines + 1] = footer("gentle prompts, not blockers · <CR> inspect   R refresh   q close")
+      return { lines = lines, select = select }
+    end,
+    on_select = function(scene)
+      index.open_scene(scene)
+    end,
+  })
+end
+
 -- --- Tracking dashboard -----------------------------------------------------
 
 function M.track(prj)
@@ -200,70 +687,101 @@ function M.track(prj)
     name = "track",
     prj = prj,
     build = function()
-      local lines = {
-        { text = "TRACKING — " .. vim.fn.fnamemodify(prj.root, ":t"), hl = "StorytellerTitle" },
-        { text = "<CR> open chapter · s session · p progress · R refresh · q close", hl = "StorytellerMuted" },
-        divider(),
-      }
+      local lines = {}
       local select = {}
-      lines[#lines + 1] = { text = ("Total words: %d"):format(track.total_words(prj)), hl = "StorytellerMetric" }
-      local streaks = track.streaks(prj)
-      lines[#lines + 1] = { text = ("Streak: %d current · %d longest"):format(streaks.current, streaks.longest), hl = "StorytellerMetric" }
+      for _, l in ipairs(M.header(prj, "TRACKING", "your writing rhythm")) do
+        lines[#lines + 1] = l
+      end
+      for _, l in ipairs(M.stats_table(prj)) do
+        lines[#lines + 1] = l
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      for _, l in ipairs(M.activity_panel(prj)) do
+        lines[#lines + 1] = l
+      end
       lines[#lines + 1] = { text = "", hl = nil }
 
-      lines[#lines + 1] = { text = "CHAPTERS", hl = "StorytellerSection" }
+      -- Chapter progress.
+      local chapters = index.chapters(prj)
       local sum = 0
-      for _, ch in ipairs(index.chapters(prj)) do
+      local chapter_rows = {}
+      for _, ch in ipairs(chapters) do
         local words = index.chapter_words(ch)
         local target = ch.target or 0
         sum = sum + target
         local pct = target > 0 and math.floor(words / target * 100) or 0
-        lines[#lines + 1] = {
-          text = ("%-34s %s %3d%%  %d/%d"):format(ch.title or ch.filename, bar(pct), pct, words, target),
-          hl = "StorytellerScene",
+        chapter_rows[#chapter_rows + 1] = {
+          segments = {
+            { text = string.format("%-24s", ch.title or ch.filename), hl = "StorytellerScene" },
+            { text = string.format("%6d w  ", words), hl = "StorytellerMuted" },
+            { text = bar(pct, 20), hl = "StorytellerBar" },
+            {
+              text = string.format(" %3d%%%s", pct, target > 0 and string.format("  %s/%s", num(words), num(target)) or ""),
+              hl = "StorytellerMuted",
+            },
+          },
         }
-        select[#lines] = ch
       end
       if sum > 0 then
-        lines[#lines + 1] = { text = ("Manuscript target: %d"):format(sum), hl = "StorytellerMuted" }
+        local total = track.total_words(prj)
+        local pct = math.floor(total / sum * 100)
+        chapter_rows[#chapter_rows + 1] = {
+          segments = {
+            { text = string.rep(" ", 24), hl = nil },
+            { text = string.format("%6s  ", "manuscript"), hl = "StorytellerTableHeader" },
+            { text = bar(pct, 20), hl = "StorytellerBar" },
+            { text = string.format(" %3d%%  %s/%s", pct, num(total), num(sum)), hl = "StorytellerMetric" },
+          },
+        }
       end
+      local cp = ui.grid_panels({ { title = "CHAPTER PROGRESS", rows = chapter_rows } })
+      local cp_offset = #lines
+      for _, l in ipairs(cp) do
+        lines[#lines + 1] = l
+      end
+      for i, ch in ipairs(chapters) do
+        select[cp_offset + 1 + i] = ch
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
 
       local s = track.session_stats()
       if s then
-        lines[#lines + 1] = { text = "", hl = nil }
-        lines[#lines + 1] = { text = ("Session: +%d words since %s"):format(s.written, s.started_at), hl = "StorytellerMetric" }
-      end
-
-      lines[#lines + 1] = { text = "", hl = nil }
-      lines[#lines + 1] = { text = "ACTIVITY", hl = "StorytellerSection" }
-      local heat = track.heatmap(prj, require("storyteller.config").get().heatmap_weeks)
-      for _, hline in ipairs(ui.heatmap_lines(heat)) do
-        lines[#lines + 1] = { text = hline, hl = "StorytellerMetric" }
-      end
-
-      lines[#lines + 1] = { text = "", hl = nil }
-      lines[#lines + 1] = { text = "MILESTONES", hl = "StorytellerSection" }
-      for _, m in ipairs(track.milestones(prj)) do
         lines[#lines + 1] = {
-          text = ("%s %s"):format(m.done and "●" or "○", m.name),
-          hl = m.done and "StorytellerDone" or "StorytellerOutline",
+          segments = {
+            { text = "  ◷ ", hl = "StorytellerMetric" },
+            { text = string.format("session +%d words since %s", s.written, s.started_at), hl = "StorytellerMetric" },
+          },
         }
+        lines[#lines + 1] = { text = "", hl = nil }
+      end
+
+      for _, l in ipairs(M.milestones_panel(prj)) do
+        lines[#lines + 1] = l
       end
 
       local balance = track.pov_balance(prj)
       if #balance.pov_order > 0 then
         lines[#lines + 1] = { text = "", hl = nil }
-        lines[#lines + 1] = { text = "POV BALANCE", hl = "StorytellerSection" }
+        local pov_rows = {}
         for _, pov in ipairs(balance.pov_order) do
           local n = balance.povs[pov]
           local pct = balance.total_scenes > 0 and math.floor(n / balance.total_scenes * 100) or 0
-          lines[#lines + 1] = {
-            text = ("%-24s %3d scenes  %s"):format(pov, n, bar(pct)),
-            hl = "StorytellerScene",
+          pov_rows[#pov_rows + 1] = {
+            segments = {
+              { text = string.format("%-24s", pov), hl = "StorytellerScene" },
+              { text = string.format("%3d scenes  ", n), hl = "StorytellerMuted" },
+              { text = bar(pct, 20), hl = "StorytellerBar" },
+              { text = string.format(" %3d%%", pct), hl = "StorytellerMuted" },
+            },
           }
+        end
+        for _, l in ipairs(ui.grid_panels({ { title = "POV BALANCE", rows = pov_rows } })) do
+          lines[#lines + 1] = l
         end
       end
 
+      lines[#lines + 1] = { text = "", hl = nil }
+      lines[#lines + 1] = footer("<CR> chapter   s session   p progress   R refresh   q close")
       return { lines = lines, select = select }
     end,
     on_select = function(ch)
@@ -300,24 +818,37 @@ function M.binder(prj)
     name = "binder",
     prj = prj,
     build = function()
-      local lines = {
-        { text = "BINDER", hl = "StorytellerTitle" },
-        { text = "<CR> open · R refresh · q close", hl = "StorytellerMuted" },
-        divider(),
-      }
+      local lines = {}
       local select = {}
-      for _, ch in ipairs(index.chapters(prj)) do
-        lines[#lines + 1] = { text = "▸ " .. (ch.title or ch.filename), hl = "StorytellerSection" }
-        select[#lines] = ch
+      lines[#lines + 1] = { text = "  ✦  BINDER", hl = "StorytellerTitle" }
+      lines[#lines + 1] = { text = "", hl = nil }
+      local chapters = index.chapters(prj)
+      local rows = {}
+      local row_data = {}
+      for _, ch in ipairs(chapters) do
+        rows[#rows + 1] = { text = "▸  " .. (ch.title or ch.filename), hl = "StorytellerSection" }
+        row_data[#row_data + 1] = ch
         for _, sc in ipairs(ch.scenes) do
           local status = scene_status(sc)
-          lines[#lines + 1] = {
-            text = ("    %s"):format(sc.title or "(untitled)"),
-            hl = ui.status_hl(status) or "StorytellerScene",
+          rows[#rows + 1] = {
+            segments = {
+              { text = "   ·  ", hl = "StorytellerDivider" },
+              { text = sc.title or "(untitled)", hl = ui.status_hl(status) or "StorytellerScene" },
+            },
           }
-          select[#lines] = sc
+          row_data[#row_data + 1] = sc
         end
       end
+      local panel = ui.grid_panels({ { title = "CHAPTERS / SCENES", rows = rows } })
+      local offset = #lines
+      for _, l in ipairs(panel) do
+        lines[#lines + 1] = l
+      end
+      for i, data in ipairs(row_data) do
+        select[offset + 1 + i] = data
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      lines[#lines + 1] = footer("<CR> open   R refresh   q close")
       return { lines = lines, select = select }
     end,
     on_select = function(data)
@@ -345,21 +876,81 @@ function M.inspector(prj)
     build = function()
       local info = meta.scene(scene)
       local m = info.meta
-      local lines = {
-        { text = (scene.title or "SCENE"):upper(), hl = "StorytellerTitle" },
-        { text = "<CR> open reference · m edit meta · R refresh · q close", hl = "StorytellerMuted" },
-        { text = "", hl = nil },
-        { text = ("Status: %s | POV: %s | Location: %s"):format(m.status or "outline", m.pov or "?", m.location or "?"), hl = "StorytellerScene" },
-        { text = ("Time: %s"):format(m.time or "?"), hl = "StorytellerMuted" },
-        { text = "", hl = nil },
-        { text = "BEAT", hl = "StorytellerSection" },
-        { text = tostring(m.beat or "No beat recorded."), hl = nil },
-        { text = "", hl = nil },
-        { text = "GOAL / CONFLICT / OUTCOME", hl = "StorytellerSection" },
-        { text = tostring(m.goal or "—"), hl = nil },
-        { text = tostring(m.conflict or "—"), hl = nil },
-        { text = tostring(m.outcome or "—"), hl = nil },
-      }
+      local lines = {}
+      lines[#lines + 1] = { text = "  ✦  " .. (scene.title or "SCENE"):upper(), hl = "StorytellerTitle" }
+      lines[#lines + 1] = { text = "", hl = nil }
+      local status_hl = ui.status_hl(m.status or "outline") or "StorytellerScene"
+      local context = ui.grid_panels({
+        {
+          title = "CONTEXT",
+          rows = {
+            {
+              segments = {
+                { text = "Status   ", hl = "StorytellerTableHeader" },
+                { text = m.status or "outline", hl = status_hl },
+              },
+            },
+            {
+              segments = {
+                { text = "POV      ", hl = "StorytellerTableHeader" },
+                { text = m.pov or "—", hl = "StorytellerScene" },
+              },
+            },
+            {
+              segments = {
+                { text = "Location ", hl = "StorytellerTableHeader" },
+                { text = m.location or "—", hl = "StorytellerScene" },
+              },
+            },
+            {
+              segments = {
+                { text = "Time     ", hl = "StorytellerTableHeader" },
+                { text = tostring(m.time or m.day or "—"), hl = "StorytellerMuted" },
+              },
+            },
+          },
+        },
+        {
+          title = "BEAT",
+          rows = {
+            { text = tostring(m.beat or "No beat recorded."), hl = "StorytellerScene" },
+          },
+        },
+      })
+      for _, l in ipairs(context) do
+        lines[#lines + 1] = l
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      local beat = ui.grid_panels({
+        {
+          title = "GOAL / CONFLICT / OUTCOME",
+          rows = {
+            {
+              segments = {
+                { text = "Goal      ", hl = "StorytellerTableHeader" },
+                { text = tostring(m.goal or "—"), hl = "StorytellerScene" },
+              },
+            },
+            {
+              segments = {
+                { text = "Conflict  ", hl = "StorytellerTableHeader" },
+                { text = tostring(m.conflict or "—"), hl = "StorytellerScene" },
+              },
+            },
+            {
+              segments = {
+                { text = "Outcome   ", hl = "StorytellerTableHeader" },
+                { text = tostring(m.outcome or "—"), hl = "StorytellerScene" },
+              },
+            },
+          },
+        },
+      })
+      for _, l in ipairs(beat) do
+        lines[#lines + 1] = l
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      lines[#lines + 1] = footer("m edit meta   R refresh   q close")
       return { lines = lines, select = {} }
     end,
     keys = {
@@ -383,18 +974,22 @@ function M.template_preview(prj, name)
     name = "template-preview",
     prj = prj,
     build = function()
-      local lines = {
-        { text = ("TEMPLATE: %s"):format(plan.template.name or plan.template.id), hl = "StorytellerTitle" },
-        { text = "a apply · q cancel", hl = "StorytellerMuted" },
-        { text = "", hl = nil },
-        { text = ("%d chapter(s) to create · %d skipped"):format(#plan.created, #plan.skipped), hl = "StorytellerMetric" },
-      }
+      local lines = {}
+      lines[#lines + 1] = { text = "  ✦  TEMPLATE  " .. (plan.template.name or plan.template.id), hl = "StorytellerTitle" }
+      lines[#lines + 1] = { text = "  " .. #plan.created .. " chapter(s) to create · " .. #plan.skipped .. " skipped", hl = "StorytellerMetric" }
+      lines[#lines + 1] = { text = "", hl = nil }
+      local rows = {}
       for _, p in ipairs(plan.created) do
-        lines[#lines + 1] = { text = ("  + %s"):format(vim.fn.fnamemodify(p, ":t")), hl = "StorytellerDone" }
+        rows[#rows + 1] = { text = "+ " .. vim.fn.fnamemodify(p, ":t"), hl = "StorytellerDone" }
       end
       for _, p in ipairs(plan.skipped) do
-        lines[#lines + 1] = { text = ("  = %s (exists)"):format(vim.fn.fnamemodify(p, ":t")), hl = "StorytellerMuted" }
+        rows[#rows + 1] = { text = "= " .. vim.fn.fnamemodify(p, ":t") .. "  (exists)", hl = "StorytellerMuted" }
       end
+      for _, l in ipairs(ui.grid_panels({ { title = "PREVIEW", rows = rows } })) do
+        lines[#lines + 1] = l
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      lines[#lines + 1] = footer("a apply   q cancel")
       return { lines = lines, select = {} }
     end,
     keys = {

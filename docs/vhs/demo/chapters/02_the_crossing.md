@@ -17,6 +17,7 @@ storyteller: scene
 status: outline
 pov: Odysseus
 location: Open Sea
+day: 3
 beat: The storm reveals its cost.
 ```
 

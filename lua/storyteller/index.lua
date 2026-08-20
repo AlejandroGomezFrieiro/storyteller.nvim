@@ -274,6 +274,91 @@ M.all_references = function(prj)
   return out
 end
 
+-- Scenes ordered by numeric story time when available. Free-form time keeps
+-- manuscript order so the timeline never invents chronology.
+M.timeline = function(prj)
+  local out = {}
+  local previous_numeric = nil
+  for order, scene in ipairs(M.scenes(prj)) do
+    local value = scene.meta and (scene.meta.day or scene.meta.time)
+    local numeric = tonumber(value)
+    scene.timeline_order = order
+    scene.timeline_value = value
+    scene.timeline_numeric = numeric
+    scene.timeline_regression = numeric and previous_numeric and numeric < previous_numeric or false
+    if numeric then
+      previous_numeric = numeric
+    end
+    out[#out + 1] = scene
+  end
+  table.sort(out, function(a, b)
+    if a.timeline_numeric and b.timeline_numeric and a.timeline_numeric ~= b.timeline_numeric then
+      return a.timeline_numeric < b.timeline_numeric
+    end
+    if a.timeline_numeric and not b.timeline_numeric then
+      return true
+    end
+    if b.timeline_numeric and not a.timeline_numeric then
+      return false
+    end
+    return a.timeline_order < b.timeline_order
+  end)
+  return out
+end
+
+-- Group setup/payoff keys into plot threads and retain the scenes that carry
+-- each side. This is derived data; the scene YAML remains authoritative.
+M.plot_threads = function(prj)
+  local threads = {}
+  local function add(value, side, scene)
+    if type(value) == "table" then
+      for _, item in ipairs(value) do add(item, side, scene) end
+    elseif value and tostring(value) ~= "" then
+      local key = tostring(value)
+      threads[key] = threads[key] or { key = key, setup = {}, payoff = {} }
+      threads[key][side][#threads[key][side] + 1] = scene
+    end
+  end
+  for _, scene in ipairs(M.scenes(prj)) do
+    add(scene.meta and scene.meta.setup, "setup", scene)
+    add(scene.meta and scene.meta.payoff, "payoff", scene)
+  end
+  local out = {}
+  for _, thread in pairs(threads) do
+    thread.state = #thread.setup > 0 and #thread.payoff > 0 and "complete"
+      or (#thread.setup > 0 and "needs payoff" or "needs setup")
+    out[#out + 1] = thread
+  end
+  table.sort(out, function(a, b) return a.key < b.key end)
+  return out
+end
+
+-- A calm review list for scenes that deserve a second look.
+M.story_health = function(prj)
+  local findings = {}
+  for _, scene in ipairs(M.scenes(prj)) do
+    local m = scene.meta or {}
+    if m.goal and not m.conflict then
+      findings[#findings + 1] = { kind = "beat", label = "Goal without conflict", scene = scene }
+    elseif m.conflict and not m.outcome then
+      findings[#findings + 1] = { kind = "beat", label = "Conflict without outcome", scene = scene }
+    end
+    local target = tonumber(m.target)
+    if target and scene.words and scene.words > target then
+      findings[#findings + 1] = { kind = "length", label = "Over scene target", scene = scene }
+    end
+    if not m.time and not m.day then
+      findings[#findings + 1] = { kind = "timeline", label = "No story time", scene = scene }
+    end
+  end
+  for _, thread in ipairs(M.plot_threads(prj)) do
+    if thread.state ~= "complete" then
+      findings[#findings + 1] = { kind = "thread", label = thread.key .. " · " .. thread.state, thread = thread }
+    end
+  end
+  return findings
+end
+
 -- --- Navigation helpers -----------------------------------------------------
 
 -- The scene under the cursor, if any.

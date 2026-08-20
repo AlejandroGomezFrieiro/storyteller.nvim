@@ -1,17 +1,26 @@
 -- storyteller.ui.dashboard
--- The entry screen: project stats plus one row per pillar. Selecting a row
--- runs the corresponding view/command.
+-- The entry screen, in the spirit of triforce.nvim: a project header with
+-- key metrics and a manuscript progress bar, a bordered stats grid, a
+-- GitHub-style activity heatmap, grouped action panels, and milestones.
 
 local ui = require("storyteller.ui")
 local project = require("storyteller.project")
 local index = require("storyteller.index")
-local track = require("storyteller.track")
 local compile = require("storyteller.compile")
 
 local M = {}
 
-local function run(fn)
-  fn()
+local function footer(text)
+  return { text = "  " .. text, hl = "StorytellerMuted" }
+end
+
+local function action_row(action)
+  return {
+    segments = {
+      { text = "[" .. action.key .. "] ", hl = "StorytellerKey" },
+      { text = string.format("%-13s", action.name), hl = "StorytellerScene" },
+    },
+  }
 end
 
 function M.open(prj)
@@ -25,19 +34,19 @@ function M.open(prj)
       local templates = require("storyteller.templates")
       local pickers = require("storyteller.pickers")
 
-      local lines = {
-        { text = "STORYTELLER", hl = "StorytellerTitle" },
-        { text = "<CR> run · q close", hl = "StorytellerMuted" },
-        { text = string.rep("─", 56), hl = "StorytellerDivider" },
-      }
-      local chapters = index.chapters(prj)
-      local scenes = index.scenes(prj)
-      lines[#lines + 1] = {
-        text = ("%d chapters · %d scenes · %d words"):format(#chapters, #scenes, track.total_words(prj)),
-        hl = "StorytellerMetric",
-      }
-      local s = track.streaks(prj)
-      lines[#lines + 1] = { text = ("Streak: %d days"):format(s.current), hl = "StorytellerMetric" }
+      local lines = {}
+      local select = {}
+
+      for _, l in ipairs(views.header(prj, "STORYTELLER", "your writing room")) do
+        lines[#lines + 1] = l
+      end
+      for _, l in ipairs(views.stats_table(prj)) do
+        lines[#lines + 1] = l
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      for _, l in ipairs(views.activity_panel(prj)) do
+        lines[#lines + 1] = l
+      end
       lines[#lines + 1] = { text = "", hl = nil }
 
       local function template_pick()
@@ -54,32 +63,99 @@ function M.open(prj)
         })
       end
 
-      local actions = {
-        { key = "o", name = "Outline", run = function() views.outline(prj) end },
-        { key = "b", name = "Corkboard", run = function() views.corkboard(prj) end },
-        { key = "c", name = "Compile (Scrivenings)", run = function() compile.open(prj) end },
-        { key = "t", name = "Tracking", run = function() views.track(prj) end },
-        { key = "T", name = "Apply a story template", run = template_pick },
-        { key = "e", name = "Export manuscript", run = function() require("storyteller.commands").dispatch(prj, { "export" }) end },
-        { key = "r", name = "References", run = function() references.panel(prj) end },
-        { key = "d", name = "Detect references", run = function() require("storyteller.commands").dispatch(prj, { "detect" }) end },
-        { key = "m", name = "Edit scene metadata", run = function() require("storyteller.ui.meta_form").edit(index.current_scene(prj)) end },
-        { key = "w", name = "Workspace", run = function() require("storyteller.ui.workspace").toggle(prj) end },
+      local groups = {
+        {
+          title = "WRITE",
+          actions = {
+            { key = "C", name = "Compile", run = function() compile.open(prj) end },
+            { key = "E", name = "Export", run = function() require("storyteller.commands").dispatch(prj, { "export" }) end },
+            { key = "S", name = "Session", run = function() require("storyteller.commands").dispatch(prj, { "session" }) end },
+          },
+        },
+        {
+          title = "NAVIGATE",
+          actions = {
+            { key = "O", name = "Outline", run = function() views.outline(prj) end },
+            { key = "B", name = "Corkboard", run = function() views.corkboard(prj) end },
+            { key = "W", name = "Workspace", run = function() require("storyteller.ui.workspace").toggle(prj) end },
+          },
+        },
+        {
+          title = "REVIEW",
+          actions = {
+            { key = "T", name = "Tracking", run = function() views.track(prj) end },
+            { key = "Y", name = "Timeline", run = function() views.timeline(prj) end },
+            { key = "F", name = "Threads", run = function() views.threads(prj) end },
+          },
+        },
+      }
+      local groups2 = {
+        {
+          title = "STORY",
+          actions = {
+            { key = "M", name = "Scene meta", run = function() require("storyteller.ui.meta_form").edit(index.current_scene(prj)) end },
+            { key = "T", name = "Template", run = template_pick },
+            { key = "H", name = "Health", run = function() views.health(prj) end },
+          },
+        },
+        {
+          title = "ORGANIZE",
+          actions = {
+            { key = "R", name = "References", run = function() references.panel(prj) end },
+            { key = "D", name = "Detect", run = function() require("storyteller.commands").dispatch(prj, { "detect" }) end },
+            { key = "I", name = "Ideas", run = function() require("storyteller.commands").dispatch(prj, { "idea" }) end },
+          },
+        },
       }
 
-      local select = {}
-      for _, a in ipairs(actions) do
-        lines[#lines + 1] = {
-          segments = {
-            { text = ("  [%s] "):format(a.key), hl = "StorytellerKey" },
-            { text = a.name, hl = "StorytellerScene" },
-          },
-        }
-        select[#lines] = a.run
+      local function render_groups(groups)
+        local panels = {}
+        for _, g in ipairs(groups) do
+          local rows = {}
+          for _, a in ipairs(g.actions) do
+            rows[#rows + 1] = action_row(a)
+          end
+          panels[#panels + 1] = { title = g.title, rows = rows }
+        end
+        local panel_lines, bounds = ui.grid_panels(panels)
+        local offset = #lines
+        for _, l in ipairs(panel_lines) do
+          lines[#lines + 1] = l
+        end
+        for r = 1, #groups[1].actions do
+          select[offset + 1 + r] = function(col)
+            local c = col + 1
+            for i, b in ipairs(bounds) do
+              if c >= b.start and c < b.start + b.width then
+                return groups[i].actions[r]
+              end
+            end
+            return nil
+          end
+        end
       end
+
+      render_groups(groups)
+      lines[#lines + 1] = { text = "", hl = nil }
+      render_groups(groups2)
+      lines[#lines + 1] = { text = "", hl = nil }
+      for _, l in ipairs(views.milestones_panel(prj)) do
+        lines[#lines + 1] = l
+      end
+      lines[#lines + 1] = { text = "", hl = nil }
+      lines[#lines + 1] = footer("<CR> open   R refresh   q close")
+
       return { lines = lines, select = select }
     end,
-    on_select = run,
+    on_select = function(data)
+      if type(data) == "function" then
+        local _, col = vim.api.nvim_win_get_cursor(0)
+        local action = data(col)
+        if action then
+          action.run()
+        end
+      end
+    end,
   })
 end
 

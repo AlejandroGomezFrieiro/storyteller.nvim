@@ -5,8 +5,18 @@ adds context while you write: names in prose can lead to reference cards,
 completion can suggest project vocabulary, and diagnostics can point out
 unfinished connections.
 
+The LSP-based approach is heavily inspired by
+[markdown-oxide](https://github.com/Feel-ix-343/markdown-oxide). That project
+demonstrates how much more natural Markdown navigation, completion, references,
+and rename become when they are provided through Neovim's native LSP interface.
+Storyteller carries that approach into a story-aware model: scenes, aliases,
+prose names, plot threads, and reference-card types.
+
 The server is written for stories rather than generic Markdown. It reads the
 same `chapters/`, `references/`, and scene metadata that the Neovim plugin uses.
+It is an independent implementation with its own project model; the
+markdown-oxide influence is architectural and inspirational, not a runtime
+dependency.
 
 ## Install And Start
 

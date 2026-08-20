@@ -54,6 +54,9 @@ A single `:Story` command with subcommand-style arguments and completion:
   :Story scenes           pick a scene
   :Story next|prev        move between scenes
   :Story corkboard [q]    review scene cards (optionally filtered by text)
+  :Story timeline          review scenes in story-time order
+  :Story threads           review setup/payoff plot threads
+  :Story health            review loose ends and incomplete beats
   :Story resume           return to the last visited scene
   :Story meta             edit the current scene's metadata
   :Story status [s]       set (or cycle) the current scene status

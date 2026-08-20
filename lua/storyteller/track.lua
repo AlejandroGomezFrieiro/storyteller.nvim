@@ -162,6 +162,116 @@ function M.heatmap(prj, weeks)
   return out
 end
 
+function M.activity_summary(prj)
+  local entries = M.log_entries(prj)
+  local active, words, best = 0, 0, nil
+  for _, entry in ipairs(entries) do
+    if entry.delta and entry.delta > 0 then
+      active = active + 1
+      words = words + entry.delta
+      if not best or entry.delta > best.delta then
+        best = entry
+      end
+    end
+  end
+  return {
+    active_days = active,
+    logged_words = words,
+    average = active > 0 and math.floor(words / active) or 0,
+    best_day = best,
+  }
+end
+
+-- GitHub-style grid: weeks as columns, Sun..Sat as rows. Newest day (today)
+-- lands in the final column. `months[w]` labels the column where a new month
+-- begins, like a contribution graph.
+function M.week_grid(prj, weeks)
+  prj = prj or project.current()
+  weeks = weeks or 30
+  local by_date = {}
+  for _, e in ipairs(M.log_entries(prj)) do
+    by_date[e.date] = e.delta or 0
+  end
+  local now = os.time()
+  local today_dow = tonumber(os.date("%w", now))
+  local grid = {}
+  local months = {}
+  local last_month = nil
+  for w = 1, weeks do
+    grid[w] = {}
+    local first = nil
+    for d = 0, 6 do
+      local offset = (weeks - w) * 7 + (today_dow - d)
+      if offset >= 0 then
+        local t = now - offset * 86400
+        local date = os.date("%Y-%m-%d", t)
+        local cell = { date = date, delta = by_date[date] or 0 }
+        grid[w][d] = cell
+        if not first then
+          first = cell
+        end
+      end
+    end
+    if first then
+      local month_num = tonumber(first.date:sub(6, 7))
+      if month_num ~= last_month then
+        months[w] = os.date("%b", os.time({
+          year = tonumber(first.date:sub(1, 4)),
+          month = month_num,
+          day = 1,
+        }))
+        last_month = month_num
+      end
+    end
+  end
+  return { grid = grid, months = months, weeks = weeks }
+end
+
+-- GitHub-style grid: weeks as columns, Sun..Sat as rows. Newest day (today)
+-- lands in the final column. `months[w]` labels the column where a new month
+-- begins, like a contribution graph.
+function M.week_grid(prj, weeks)
+  prj = prj or project.current()
+  weeks = weeks or 30
+  local by_date = {}
+  for _, e in ipairs(M.log_entries(prj)) do
+    by_date[e.date] = e.delta or 0
+  end
+  local now = os.time()
+  local today_dow = tonumber(os.date("%w", now))
+  local grid = {}
+  local months = {}
+  local last_month = nil
+  for w = 1, weeks do
+    grid[w] = {}
+    local first = nil
+    for d = 0, 6 do
+      local offset = (weeks - w) * 7 + (today_dow - d)
+      if offset >= 0 then
+        local t = now - offset * 86400
+        local date = os.date("%Y-%m-%d", t)
+        local cell = { date = date, delta = by_date[date] or 0 }
+        grid[w][d] = cell
+        if not first then
+          first = cell
+        end
+      end
+    end
+    if first then
+      local month_num = tonumber(first.date:sub(6, 7))
+      if month_num ~= last_month then
+        months[w] = os.date("%b", os.time({
+          year = tonumber(first.date:sub(1, 4)),
+          month = month_num,
+          day = 1,
+        }))
+        last_month = month_num
+      end
+    end
+  end
+  return { grid = grid, months = months, weeks = weeks }
+end
+
 -- Current and longest writing streaks (consecutive days with a positive delta).
 function M.streaks(prj)
   prj = prj or project.current()

@@ -65,6 +65,18 @@ register("corkboard", "Scene cards", function(prj, args)
   require("storyteller.ui.views").corkboard(prj, args[2])
 end)
 
+register("timeline", "Story chronology", function(prj)
+  require("storyteller.ui.views").timeline(prj)
+end)
+
+register("threads", "Plot setup and payoff planner", function(prj)
+  require("storyteller.ui.views").threads(prj)
+end)
+
+register("health", "Review story health", function(prj)
+  require("storyteller.ui.views").health(prj)
+end)
+
 register("resume", "Resume last scene", function(prj)
   require("storyteller.resume").open(prj)
 end)

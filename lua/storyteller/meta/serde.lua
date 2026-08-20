@@ -36,6 +36,24 @@ function M.scalar(s)
   return s:gsub("^[\"']", ""):gsub("[\"']$", "")
 end
 
+-- Parse a scalar or an inline YAML flow array (`key: [a, b, c]`). Returns a
+-- list for flow arrays and a scalar otherwise.
+local function parse_value(rest)
+  rest = strip(rest)
+  if rest:match("^%[.-%]$") then
+    local inner = rest:match("^%[(.*)%]$")
+    local list = {}
+    for item in inner:gmatch("[^,%]]+") do
+      item = strip(item)
+      if item ~= "" then
+        list[#list + 1] = M.scalar(item)
+      end
+    end
+    return list
+  end
+  return M.scalar(rest)
+end
+
 -- Parse a frontmatter block (between ^--- and ^---).
 -- Returns { meta = table, close = int, body_start = int } or nil.
 function M.parse_frontmatter(lines)
@@ -77,7 +95,7 @@ function M.parse_frontmatter(lines)
           meta[key] = list
           i = j
         else
-          meta[key] = M.scalar(rest)
+          meta[key] = parse_value(rest)
           i = i + 1
         end
       else
@@ -181,7 +199,7 @@ function M.parse_scene_block(lines, start_line, end_line)
         meta[key] = values
         line = next_line
       else
-        meta[key] = M.scalar(value)
+        meta[key] = parse_value(value)
         line = line + 1
       end
     else
@@ -221,7 +239,7 @@ function M.parse_map(lines, start, stop)
           meta[key] = list
           i = j
         else
-          meta[key] = M.scalar(rest)
+          meta[key] = parse_value(rest)
           i = i + 1
         end
       else

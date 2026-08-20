@@ -23,6 +23,9 @@ vhs docs/vhs/04-track.tape
 vhs docs/vhs/05-lsp-navigation.tape
 vhs docs/vhs/06-lsp-create-card.tape
 vhs docs/vhs/07-lsp-completion.tape
+vhs docs/vhs/08-timeline.tape
+vhs docs/vhs/09-threads.tape
+vhs docs/vhs/10-health.tape
 vhs docs/vhs/storyteller.tape
 ```
 
@@ -37,6 +40,9 @@ The output paths are declared inside each tape:
 | `05-lsp-navigation.tape` | `05-lsp-navigation.gif` | LSP hover (`K`), `gd`, `gr` on an alias. |
 | `06-lsp-create-card.tape` | `06-lsp-create-card.gif` | LSP code action: create a card for an uncarded name. |
 | `07-lsp-completion.tape` | `07-lsp-completion.gif` | LSP completion for prose names, fields, statuses, and references. |
+| `08-timeline.tape` | `08-timeline.gif` | Story-time scene timeline. |
+| `09-threads.tape` | `09-threads.gif` | Plot setup and payoff planner. |
+| `10-health.tape` | `10-health.gif` | Story health review. |
 | `storyteller.tape` | `storyteller.gif` | Tour: dashboard → corkboard → scrivenings. |
 
 `demo-init.lua` starts the plugin and the `storyteller-lsp` client for the

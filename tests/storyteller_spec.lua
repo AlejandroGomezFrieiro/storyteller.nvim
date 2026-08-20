@@ -31,8 +31,8 @@ local meta = require("storyteller.meta")
 local track = require("storyteller.track")
 local compile = require("storyteller.compile")
 local index = require("storyteller.index")
-require("storyteller.ui")
-require("storyteller.ui.views")
+local ui = require("storyteller.ui")
+local views = require("storyteller.ui.views")
 require("storyteller.ui.dashboard")
 
 -- An explicit marker must be enough to bootstrap the standard layout.
@@ -182,6 +182,17 @@ assert_true(migrated_lines:find("%- %*%*POV:%*%*") == nil, "migration removes in
 
 require("storyteller").setup({ autocmds = false })
 assert_true(vim.fn.exists(":Story") == 2, ":Story command is registered")
+
+-- Corkboard cards use Unicode borders; panel composition must measure their
+-- display width rather than their byte length.
+local _, cork_bounds = ui.compose_columns({
+  { { text = "╭─" } },
+  { { text = "╭─" } },
+}, 1)
+assert_true(cork_bounds[2].start == 4, "Unicode panel bounds use display width")
+local cork_ok = pcall(views.corkboard, prj)
+local cork_text = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+assert_true(cork_ok and cork_text:find("CORKBOARD", 1, true) ~= nil, "corkboard renders scene cards")
 
 -- Command surface: the new subcommands are registered.
 local commands = require("storyteller.commands")

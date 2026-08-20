@@ -7,6 +7,11 @@ can open, search, edit, version, or move without the plugin.
 This guide starts with the everyday workflow and then explains the features you
 can reach for when a project grows.
 
+The visual workspace includes a project home, a GitHub-like writing activity
+view, a card-based corkboard, a story timeline, a plot-thread planner, and a
+story-health review. Each is a view over the same Markdown files, not a second
+project database.
+
 ## Start A Project
 
 Storyteller finds a project from any of these signals:
@@ -94,6 +99,9 @@ The dashboard is the main doorway: `:Story` or `<leader>s`.
 - `:Story outline` shows chapters, word counts, and target progress.
 - `:Story corkboard` turns scenes into temporary, movable-feeling cards for
   review.
+- `:Story timeline` lays scenes out by numeric story day/time when available.
+- `:Story threads` follows setup fields to their matching payoffs.
+- `:Story health` gathers gentle prompts for scenes and threads worth revisiting.
 - `:Story workspace` surrounds the current buffer with a chapter/scene binder
   and a scene inspector.
 
@@ -104,6 +112,39 @@ to open a scene, `a` to cycle its status, `u` to mark it unused, `R` to rebuild
 the board, and `q` to close it.
 
 ![Corkboard](assets/02-corkboard.gif)
+
+Each corkboard card keeps the useful context nearby: chapter, status, POV,
+location, beat, and word count. Cards are virtual entries in one Storyteller
+buffer, so `<CR>` opens the scene under the cursor without creating a second
+copy of the project.
+
+## Follow The Story
+
+### Timeline
+
+`:Story timeline` is a chronology view for scenes that use `day:` or numeric
+`time:` metadata. Numeric values are ordered; free-form values such as `after
+the storm` remain in manuscript order rather than being guessed. A warning
+marker highlights a numeric timeline regression.
+
+![Story timeline](assets/08-timeline.gif)
+
+### Plot Threads
+
+`:Story threads` groups matching `setup:` and `payoff:` values. Complete threads
+are shown separately from threads that still need a setup or payoff. Select a
+thread row to open its first related scene.
+
+![Plot threads](assets/09-threads.gif)
+
+### Story Health
+
+`:Story health` is a quiet revision checklist. It can surface a goal without a
+conflict, a conflict without an outcome, scenes over their target, scenes with
+no story time, and unresolved plot threads. These are prompts, not blockers for
+a first draft.
+
+![Story health](assets/10-health.gif)
 
 ## Keep A Story Bible
 
@@ -216,6 +257,9 @@ Storyteller's default mappings live under `<leader>s`:
 | `<leader>s` | Dashboard |
 | `<leader>so` | Outline |
 | `<leader>sb` | Corkboard |
+| `<leader>sy` | Timeline |
+| `<leader>sf` | Plot threads |
+| `<leader>sh` | Story health |
 | `<leader>sc` | Compile |
 | `<leader>st` | Tracking |
 | `<leader>sd` | Detect references |
