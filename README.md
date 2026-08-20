@@ -181,3 +181,30 @@ nvim --headless -u NONE -l tests/storyteller_spec.lua
 
 The demo assets can be regenerated with the instructions in
 [`docs/vhs/`](docs/vhs/README.md).
+
+## Inspirations And Attribution
+
+Storyteller is an independent, Markdown-first Neovim plugin. It is not
+affiliated with, endorsed by, or a replacement for the projects below.
+
+- [Scrivener](https://www.literatureandlatte.com/scrivener/features) inspired
+  the binder, outliner, corkboard, targets, snapshots, compilation, and
+  continuous-manuscript editing goals.
+- [Kindling](https://kindlingwriter.com/features) inspired the rolling outline,
+  reference-aware drafting, and conservative reference-detection model.
+- [yWriter](https://www.spacejock.com/yWriter.html) reinforced the value of a
+  chapter, scene, and reference workflow for novelists.
+- [triforce.nvim](https://github.com/gisketch/triforce.nvim) inspired the
+  rewarding progress language, activity heatmap, milestone presentation, and
+  colorful dashboard direction.
+- [obsidian.nvim](https://github.com/obsidian-nvim/obsidian.nvim) and
+  [Neorg](https://github.com/nvim-neorg/neorg) informed the modular Neovim and
+  Markdown-first design.
+- [obsidian-storyline](https://github.com/PixeroJan/obsidian-storyline) inspired
+  arbitrary, user-defined reference categories.
+- [morph.nvim](https://github.com/jrop/morph.nvim) is vendored as the reactive
+  rendering library; [nui.nvim](https://github.com/MunifTanjim/nui.nvim) is an
+  optional window and layout dependency.
+
+Storyteller stores its own data model in plain Markdown and YAML. It does not
+import, copy, or depend on those applications' proprietary project formats.
