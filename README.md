@@ -13,6 +13,14 @@ comfortable to work with.
 > the language server may change between releases. Expect rough edges and
 > occasional breaking changes while the project takes shape.
 
+## AI, and who writes the story
+
+Storyteller was developed with the aid of AI tools, but it has no AI
+integration. Nothing in the plugin generates, rewrites, or "improves" your
+prose, and it never calls out to a language model. It is a set of tools for
+organizing and reviewing your own writing — not a way to replace an author.
+The words are yours.
+
 ## What You Get
 
 - A project dashboard, outline, card-based corkboard, timeline, plot-thread
