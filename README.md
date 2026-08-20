@@ -8,18 +8,36 @@ around it, and the manuscript as a whole. Your writing stays in ordinary
 Markdown files. Storyteller adds the views and actions that make those files
 comfortable to work with.
 
+## Why?
+
+As an engineer, I spend a good amount of time in Neovim writing and reading code, and have my own personalized configuration. I wanted to build this for my own personal usage, and as a way to create an open source standard that allows text editors like Neovim, Zed, etc to help authors without depending on other tools.
+
+I also wanted to check how well a custom LSP would interact with prose, since I very much enjoyed [markdown-oxide](https://github.com/Feel-ix-343/markdown-oxide) as a way to do note-taking with markdown notes.
+
+
 > [!WARNING]
 > `storyteller.nvim` is in **early development**. Commands, APIs, metadata, and
 > the language server may change between releases. Expect rough edges and
 > occasional breaking changes while the project takes shape.
 
-## AI, and who writes the story
+## AI disclaimer
 
 Storyteller was developed with the aid of AI tools, but it has no AI
 integration. Nothing in the plugin generates, rewrites, or "improves" your
-prose, and it never calls out to a language model. It is a set of tools for
-organizing and reviewing your own writing — not a way to replace an author.
-The words are yours.
+prose, and it never calls out to a language model.
+
+It is a set of tools for organizing and reviewing your own writing.
+I do not believe in AI tools replacing artists, or any other person's job.
+But as any new technology, there are clear consequences from its mere existence.
+
+I understand many authors are against any usage of AI, and respect that. That is why
+it is also important to add clear disclaimers of when they were used as part of a
+social code-of-conduct of sorts.
+
+As for any technology, I think there is a place for LLMs in the hands of people.
+If you feel uncomfortable with using this tool because it was created with the aid of AI,
+that is fine. But I do wish this tool could help you in your own projects,
+or inspire similar ones.
 
 ## What You Get
 
@@ -228,7 +246,8 @@ The demo assets can be regenerated with the instructions in
 ## Inspirations And Attribution
 
 Storyteller is an independent, Markdown-first Neovim plugin. It is not
-affiliated with, endorsed by, or a replacement for the projects below.
+affiliated with, endorsed by, or a replacement for the projects below. Many of them
+have helped inspired what this plugin is, as well as the [storyteller](https://github.com/AlejandroGomezFrieiro/storyteller) standard.
 
 - [Scrivener](https://www.literatureandlatte.com/scrivener/features) inspired
   the binder, outliner, corkboard, targets, snapshots, compilation, and
