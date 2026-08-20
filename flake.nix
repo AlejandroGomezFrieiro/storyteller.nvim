@@ -91,6 +91,9 @@
         packages = [
           pkgs.vhs
           demoNvim
+          # Keep the LSP executable available when demo-init.lua is used
+          # directly instead of the generated Nixvim configuration.
+          self.packages.${system}.storyteller-lsp
         ];
       };
     });

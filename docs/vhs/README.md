@@ -11,10 +11,11 @@ YAML, character/location cards with aliases, a custom codex type
 (`creatures/`), an unused card, and a name mentioned in prose without a card so
 the LSP can offer to create it.
 
-From the repository root:
+From the repository root, use the demo shell so the recordings include the
+same polished LSP UI used by the project demos:
 
 ```bash
-nix develop        # provides vhs + the storyteller-lsp binary
+nix develop .#demo # provides VHS, Storyteller, LSPSaga, and storyteller-lsp
 vhs docs/vhs/01-dashboard.tape
 vhs docs/vhs/02-corkboard.tape
 vhs docs/vhs/03-scrivenings.tape
@@ -35,8 +36,8 @@ The output paths are declared inside each tape:
 | `04-track.tape` | `04-track.gif` | `:Story track` tracking dashboard. |
 | `05-lsp-navigation.tape` | `05-lsp-navigation.gif` | LSP hover (`K`), `gd`, `gr` on an alias. |
 | `06-lsp-create-card.tape` | `06-lsp-create-card.gif` | LSP code action: create a card for an uncarded name. |
-| `07-lsp-completion.tape` | `07-lsp-completion.gif` | LSP completion of a multi-word alias. |
-| `storyteller.tape` | `storyteller.gif` | Fast tour: dashboard → corkboard → scrivenings. |
+| `07-lsp-completion.tape` | `07-lsp-completion.gif` | LSP completion for prose names, fields, statuses, and references. |
+| `storyteller.tape` | `storyteller.gif` | Tour: dashboard → corkboard → scrivenings. |
 
 `demo-init.lua` starts the plugin and the `storyteller-lsp` client for the
 demo project. Regenerate all assets after a visual or workflow change before

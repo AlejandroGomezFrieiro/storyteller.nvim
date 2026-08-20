@@ -1,110 +1,139 @@
-# Storyteller Schema Reference
+# Project Schema Reference
 
-The vocabulary Storyteller understands — scene/chapter fields, enum values,
-reference types, and diagnostics toggles — is **schema-driven at runtime**. The
-language server and the plugin load and merge the same schema with the same
-recipe, so a project can reshape the tool without touching code.
+Storyteller's schema is the vocabulary of a project. It defines which scene
+and chapter fields are valid, which values can be completed, which reference
+types exist, and which diagnostics are enabled.
 
-## Layers
+Most projects can use the defaults. A project schema becomes useful when your
+story has its own statuses, recurring fields, point-of-view list, or reference
+categories.
 
-Three layers merge per key, lowest to highest precedence:
+## Where A Schema Comes From
 
-1. **Embedded defaults** — `server/schema.json` (mirrored by
-   `lua/storyteller/schema.lua`'s `DEFAULTS`).
-2. **Project file** — first match wins:
-   - `.storyteller/schema.json`
-   - `storyteller.schema.json`
-   - `.storyteller.toml` → `[storyteller] schema = "path"` (or top-level
-     `schema = "path"`), resolved relative to the project root.
-3. **Client override** — `initializationOptions.schema`, an inline JSON value.
-   In nixvim: `storyteller.lsp.schema = { … };`.
+The final schema is merged in three layers, from lowest to highest priority:
 
-## Merge recipe
+1. Storyteller's embedded defaults.
+2. The first project schema file that exists:
+   `.storyteller/schema.json`, `storyteller.schema.json`, or a path declared in
+   `.storyteller.toml`.
+3. A client-provided override passed as `initializationOptions.schema`.
 
-Implemented identically in Rust (`server/src/schema.rs`) and Lua
-(`lua/storyteller/schema.lua`), asserted by the test suites:
+The Neovim plugin and `storyteller-lsp` use the same merge rules.
 
-- Both values are **objects** → merge **per key** (recurse), so partial
-  overrides work (`scene_field_defs.pov.completion = false`).
-- Anything else (scalar, array) → the override **replaces** the layer below.
-  Arrays never concatenate.
-- `null` or `{"remove": true}` → **delete** the key at any level.
-- A `reference_types` entry with an empty/omitted `dir` is treated as a
-  deletion.
+## Merge Rules
 
-A malformed layer is skipped with a warning (LSP `window/logMessage`, CLI
-stderr, `vim.notify`) — it never crashes the server.
+- Objects merge recursively by key, so a small override is enough.
+- Scalars and arrays replace the value below them; arrays are not concatenated.
+- `null` or `{ "remove": true }` removes a key.
+- A reference type without a directory is removed.
+- Malformed schema layers are skipped with a warning instead of stopping the
+  plugin or server.
 
-## Top-level shape
+## Schema Shape
+
+The main keys are:
+
+| Key | Purpose |
+| --- | --- |
+| `statuses` | Scene status values. |
+| `status_next` | The order used when cycling statuses. |
+| `enums` | Named lists such as points of view or tonalities. |
+| `scene_fields` | Allowed scene fields and their completion order. |
+| `scene_field_defs` | Types and completion behavior for scene fields. |
+| `chapter_fields` | Allowed chapter frontmatter fields. |
+| `chapter_field_defs` | Types and completion behavior for chapter fields. |
+| `list_fields` | Fields that contain lists. |
+| `scene_sentinel` | Marker used to identify a scene metadata block. |
+| `reference_types` | Card directories, labels, fields, and body fields. |
+| `diagnostics` | Individual diagnostic switches. |
+
+A minimal top-level shape looks like this:
 
 ```json
 {
   "statuses": ["outline", "draft", "revision", "done", "unused"],
-  "status_next": { "outline": "draft", "…": "…" },
-  "enums": {},
-  "scene_fields": ["id", "status", "pov", "…"],
-  "scene_field_defs": { "status": { "type": "enum", "from": "statuses", "completion": true }, "…": "…" },
-  "chapter_fields": ["type", "pov", "…"],
-  "chapter_field_defs": { "…": "…" },
-  "list_fields": ["tags", "chars", "…"],
-  "scene_sentinel": "storyteller: scene",
-  "reference_types": { "character": { "dir": "characters", "label": "Character", "field": "chars", "body": ["Role", "Notes"], "min_fields": ["Role"] }, "…": "…" },
-  "diagnostics": { "unknown_field": true, "…": "…" }
+  "scene_fields": ["id", "status", "pov", "location"],
+  "scene_field_defs": {
+    "status": { "type": "enum", "from": "statuses" }
+  },
+  "reference_types": {
+    "character": {
+      "dir": "characters",
+      "label": "Character",
+      "field": "chars"
+    }
+  }
 }
 ```
 
-- **`scene_fields` / `chapter_fields`** are the canonical order *and* the
-  allowlist (drive field-name completion and the `unknown_field` check).
-- **`*_field_defs`** add typing to listed fields. A def for a field absent from
-  the list is ignored; a listed field without a def is a free-form string.
-- **`FieldDef.type`** is one of `enum` | `reference` | `reference-list` |
-  `thread-key` | `string`.
-  - `enum` uses `from` (an `enums` key or `statuses`).
-  - `reference` / `reference-list` use `ref_type` (a singular `reference_types`
-    id) for completion.
-  - `thread-key` completes from existing `setup:`/`payoff:` values.
-- **`enums`** is a map of `name → [values]`; a project can define POV lists,
-  tonalities, etc. without a new field-def kind.
-- **`diagnostics`** maps a rule to a bool. Unknown keys default **on**.
-- **`setup` / `payoff`** are plot-thread keys: a thread is resolved when some
-  scene carries `setup: <key>` and some scene carries `payoff: <key>` (either
-  order). Unpaired keys are flagged; completion offers existing keys.
+## Field Definitions
 
-## Time semantics
+`scene_fields` and `chapter_fields` are both the allowlist and the completion
+order. A field definition adds typing to one of those fields:
 
-- `time:` accepts any string. `day:`/`time_of_day:` are free-form siblings.
-- A numeric `time:`/`day:` value is a "story day" ordinal and participates in
-  numeric ordering; free text never order-compares.
-- `timeline_regression` flags numeric values that decrease in document order
-  within a chapter (and across the book). Mixed numeric/free-text in one chapter
-  never warns by default.
+- `enum` reads values from `from`, which names an `enums` key or `statuses`.
+- `reference` and `reference-list` read names from a `reference_types` entry.
+- `thread-key` completes from existing `setup:` and `payoff:` values.
+- `string` is free-form text.
 
-## Per-client setup
+An unknown field is treated as a warning by default. A listed field without a
+definition is treated as a free-form string.
 
-- **Neovim (nixvim):** set `storyteller.lsp.schema` (inline JSON) or drop
-  `storyteller.schema.json` in the project root.
-- **Helix / VS Code / Emacs / Obsidian:** pass
-  `initializationOptions = { schema = { … } }` to the `storyteller-lsp` server,
-  or rely on a project schema file.
-- **CLI:** `storyteller-lsp check --project .` reads the same project schema
-  file — no editor involved.
+## Custom Vocabulary
 
-## Writing a schema
-
-In Neovim, `:Story schema write` dumps the merged defaults+project schema to
-`storyteller.schema.json`, giving a starting point for customization. `:Story
-schema` prints the merged result.
-
-Example — add a POV list and a `factions` reference type, and turn off the
-unknown-field warning:
+This example adds a point-of-view list, a faction card type, and disables the
+unknown-field diagnostic:
 
 ```json
 {
-  "enums": { "povs": ["Odysseus", "Penelope"] },
-  "scene_field_defs": { "pov": { "type": "enum", "from": "povs" } },
-  "reference_types": {
-    "faction": { "dir": "factions", "label": "Faction", "field": "factions" }
+  "enums": {
+    "povs": ["Odysseus", "Penelope"]
   },
-  "diagnostics": { "unknown_field": false }
+  "scene_field_defs": {
+    "pov": { "type": "enum", "from": "povs" }
+  },
+  "reference_types": {
+    "faction": {
+      "dir": "factions",
+      "label": "Faction",
+      "field": "factions"
+    }
+  },
+  "diagnostics": {
+    "unknown_field": false
+  }
 }
+```
+
+The corresponding project can use:
+
+```yaml
+pov: Penelope
+factions:
+  - The Council
+```
+
+Any folder below `references/` is already available as a reference type. A
+schema entry is useful when you want custom labels, fields, card bodies, or
+required card fields.
+
+## Time And Plot Threads
+
+`time`, `day`, and `time_of_day` are free-form fields. Numeric `time` or `day`
+values can also be compared in document order; the `timeline_regression`
+diagnostic reports when they move backwards.
+
+`setup` and `payoff` identify plot threads. A thread is complete when one scene
+sets it up and another scene pays it off. Unpaired keys are reported and are
+available for completion.
+
+## Inspecting The Merged Schema
+
+`:Story schema` displays the merged schema. `:Story schema write` writes a
+starting copy to `storyteller.schema.json` for editing.
+
+The command-line checker reads the same project schema:
+
+```sh
+storyteller-lsp check --project .
 ```
