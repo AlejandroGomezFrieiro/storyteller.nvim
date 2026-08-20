@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "statuses": ["outline", "draft", "revision", "done", "unused"],
   "status_next": {
     "outline": "draft",
@@ -8,11 +8,18 @@
     "done": "unused",
     "unused": "outline"
   },
-  "enums": {},
+  "enums": {
+    "narrative_modes": ["linear", "flashback", "flash-forward", "parallel"],
+    "persons": ["first", "second", "third"],
+    "tenses": ["past", "present", "future"],
+    "time_of_day": ["dawn", "morning", "afternoon", "evening", "night"]
+  },
   "scene_fields": [
     "id", "status", "planning", "pov", "location", "time", "day", "time_of_day",
     "goal", "conflict", "outcome", "beat", "target", "setup", "payoff",
-    "tags", "chars", "locs", "items", "orgs", "ignore"
+    "tags", "chars", "locs", "items", "orgs", "ignore",
+    "synopsis", "label", "narrative_mode", "duration", "intensity",
+    "person", "tense", "narrator", "timeline", "after", "before"
   ],
   "scene_field_defs": {
     "status":   { "type": "enum", "from": "statuses", "completion": true },
@@ -26,7 +33,18 @@
     "payoff":   { "type": "thread-key", "completion": true },
     "time":     { "type": "string" },
     "day":      { "type": "string" },
-    "time_of_day": { "type": "string" }
+    "time_of_day": { "type": "enum", "from": "time_of_day", "completion": true },
+    "synopsis": { "type": "string" },
+    "label":    { "type": "string" },
+    "narrative_mode": { "type": "enum", "from": "narrative_modes", "completion": true },
+    "duration": { "type": "string" },
+    "intensity": { "type": "number" },
+    "person":   { "type": "enum", "from": "persons", "completion": true },
+    "tense":    { "type": "enum", "from": "tenses", "completion": true },
+    "narrator": { "type": "reference", "ref_type": "character", "completion": true },
+    "timeline": { "type": "reference", "ref_type": "timeline", "completion": true },
+    "after":    { "type": "string" },
+    "before":   { "type": "string" }
   },
   "chapter_fields": [
     "type", "pov", "location", "status", "planning", "target",
@@ -51,7 +69,15 @@
     "item":          { "dir": "items",          "label": "Item",          "field": "items",
                        "body": ["Type", "Notes"], "min_fields": [] },
     "organization":  { "dir": "organizations",  "label": "Organization",  "field": "orgs",
-                       "body": ["Wants", "Members", "Notes"], "min_fields": [] }
+                       "body": ["Wants", "Members", "Notes"], "min_fields": [] },
+    "timeline":      { "dir": "timelines",      "label": "Timeline",      "field": "timeline",
+                       "body": ["Notes"], "min_fields": [] }
+  },
+  "document_types": {
+    "part":     { "label": "Part",     "heading_level": 1, "contains": ["chapter"] },
+    "chapter":  { "label": "Chapter",  "heading_level": 2, "contains": ["scene", "beat"] },
+    "scene":    { "label": "Scene",    "heading_level": 3, "metadata": true },
+    "beat":     { "label": "Beat",     "heading_level": 4 }
   },
   "diagnostics": {
     "unknown_field": true,
@@ -60,6 +86,9 @@
     "unresolved_setup": true,
     "unresolved_payoff": true,
     "timeline_regression": true,
+    "timeline_overlap": true,
+    "relative_unresolved": true,
+    "dangling_relation": true,
     "duplicate_alias": true,
     "missing_min_fields": true,
     "duplicate_id": true,

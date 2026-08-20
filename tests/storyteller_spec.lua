@@ -325,7 +325,7 @@ vim.fn.writefile({
 }, schema_proj .. "/.storyteller/schema.json")
 local loaded = schema.load(schema_proj)
 assert_true(loaded.reference_types.item == nil, "project schema deletes the item type")
-assert_true(vim.deep_equal(loaded.enums, { moods = { "tense", "calm" } }), "project schema adds an enum")
+assert_true(vim.deep_equal(loaded.enums.moods, { "tense", "calm" }), "project schema adds an enum")
 assert_true(schema.flag("unknown_field") == false, "diagnostics toggle is overridable")
 assert_true(schema.flag("missing_id") == false, "default diagnostics toggles survive merge")
 
