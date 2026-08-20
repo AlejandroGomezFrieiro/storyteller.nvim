@@ -2,4 +2,3 @@ result
 result-*
 build/
 .direnv/
-server/target/

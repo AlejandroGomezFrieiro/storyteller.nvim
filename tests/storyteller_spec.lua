@@ -258,9 +258,10 @@ if snap and snap.type == "git" then
   assert_true(#log > 0, "git snapshot creates a commit")
 end
 
--- Schema consistency: schema.lua must mirror server/schema.json.
+-- Schema consistency: schema.lua must mirror the bundled canonical schema.json.
 local schema = require("storyteller.schema")
-local schema_json = vim.json.decode(table.concat(vim.fn.readfile(root .. "/server/schema.json"), "\n"))
+local schema_json = vim.json.decode(table.concat(vim.fn.readfile(root .. "/lua/storyteller/schema.json"), "\n"))
+assert_true(schema.version == schema_json.version, "schema.version matches schema.json")
 assert_true(vim.deep_equal(schema.statuses, schema_json.statuses), "schema.statuses matches schema.json")
 assert_true(vim.deep_equal(schema.scene_fields, schema_json.scene_fields), "schema.scene_fields matches schema.json")
 assert_true(vim.deep_equal(schema.chapter_fields, schema_json.chapter_fields), "schema.chapter_fields matches schema.json")

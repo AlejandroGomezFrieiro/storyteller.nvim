@@ -154,8 +154,31 @@ syntax:
 - Completion suggests names and metadata values.
 - Code actions create cards and connect them to scenes.
 
-See the [language server guide](docs/language-server.md) for installation,
+`storyteller-lsp` is the reference implementation of the
+[Storyteller standard](https://github.com/AlejandroGomezFrieiro/storyteller) —
+an open, editor-agnostic standard for Markdown-first fiction writing. Any
+editor can speak the same protocol, and the same binary doubles as a headless
+CLI (`storyteller-lsp check --project .`). See the
+[language server guide](docs/language-server.md) for installation,
 configuration, and the command-line tools.
+
+## Architecture
+
+Storyteller is three layers:
+
+1. **The standard** ([`storyteller`](https://github.com/AlejandroGomezFrieiro/storyteller))
+   — a vendor-neutral spec for how a fiction project lives on disk as Markdown,
+   plus the LSP protocol and CLI contract.
+2. **The reference implementation** — `storyteller-core` (a Rust library) and
+   `storyteller-lsp` (the server and CLI), from the same repo.
+3. **This plugin** — `storyteller.nvim` is the reference *consumer*. It talks to
+   `storyteller-lsp` over LSP, with a native Lua fallback so the read-only views
+   (outline, corkboard) and LSP-less setups keep working.
+
+The plugin bundles a copy of the standard's canonical `schema.json`
+(`lua/storyteller/schema.json`) so its metadata vocabulary never drifts from
+the standard; the conformance fixtures in the standard repo pin both
+implementations to the same behavior.
 
 ## Configuration
 

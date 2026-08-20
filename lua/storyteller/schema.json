@@ -1,4 +1,5 @@
 {
+  "version": "1.0.0",
   "statuses": ["outline", "draft", "revision", "done", "unused"],
   "status_next": {
     "outline": "draft",

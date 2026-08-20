@@ -7,12 +7,17 @@
     nixvim_config.url = "github:AlejandroGomezFrieiro/nixvim_config";
     nixvim_config.inputs.nixpkgs.follows = "nixpkgs";
     nixvim_config.inputs.systems.follows = "systems";
+    # The open standard + reference language server (spec/ + storyteller-lsp).
+    storyteller.url = "github:AlejandroGomezFrieiro/storyteller";
+    storyteller.inputs.nixpkgs.follows = "nixpkgs";
+    storyteller.inputs.systems.follows = "systems";
   };
 
   outputs = inputs @ {
     self,
     nixpkgs,
     nixvim_config,
+    storyteller,
     ...
   }: let
     forAllSystems = nixpkgs.lib.genAttrs nixpkgs.lib.systems.flakeExposed;
@@ -34,14 +39,8 @@
         cp -r ${./templates} $out/templates
       '';
 
-      # Prose-aware language server (replaces markdown-oxide for Storyteller).
-      storyteller-lsp = pkgs.rustPlatform.buildRustPackage {
-        pname = "storyteller-lsp";
-        version = version;
-        src = ./server;
-        cargoLock = {lockFile = ./server/Cargo.lock;};
-        doCheck = true;
-      };
+      # Prose-aware language server, provided by the storyteller standard repo.
+      storyteller-lsp = storyteller.packages.${system}.storyteller-lsp;
     });
 
     devShells = forAllSystems (system: let
@@ -76,13 +75,8 @@
           pkgs.vhs
           # Optional UI dependency; the plugin falls back without it.
           pkgs.vimPlugins.nui-nvim
-          # The language server, built from this flake.
+          # The language server, from the storyteller standard repo.
           self.packages.${system}.storyteller-lsp
-          # Rust toolchain for the language server.
-          pkgs.cargo
-          pkgs.rustc
-          pkgs.gcc
-          pkgs.pkg-config
         ];
       };
 

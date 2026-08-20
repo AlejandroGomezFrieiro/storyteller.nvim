@@ -1,81 +1,23 @@
 -- storyteller.schema
 -- Single source of truth for Storyteller's metadata vocabulary, loaded at
 -- runtime from three layers (embedded defaults < project file < client), merged
--- with a recipe that mirrors server/src/schema.rs exactly.
+-- with a recipe that mirrors the reference implementation exactly.
 --
--- The public tables (M.statuses, M.reference_types, M.type_field, …) keep their
--- current shape for all consumers; `load(root)` refreshes them from disk. The
--- mirror test in tests/storyteller_spec.lua asserts DEFAULTS ≡ server/schema.json.
+-- The DEFAULTS are loaded from the bundled canonical schema.json so the plugin
+-- never drifts from the standard. The mirror test in tests/storyteller_spec.lua
+-- asserts DEFAULTS ≡ the canonical schema on disk.
 
 local M = {}
 
--- Mirror of server/schema.json (asserted by the spec). Kept in lockstep with
--- server/src/schema.rs and server/schema.json.
-local DEFAULTS = {
-  statuses = { "outline", "draft", "revision", "done", "unused" },
-  status_next = {
-    outline = "draft",
-    draft = "revision",
-    revision = "done",
-    done = "unused",
-    unused = "outline",
-  },
-  enums = {},
-  scene_fields = {
-    "id", "status", "planning", "pov", "location", "time", "day", "time_of_day",
-    "goal", "conflict", "outcome", "beat", "target", "setup", "payoff",
-    "tags", "chars", "locs", "items", "orgs", "ignore",
-  },
-  scene_field_defs = {
-    status = { type = "enum", from = "statuses", completion = true },
-    pov = { type = "reference", ref_type = "character", completion = true },
-    location = { type = "reference", ref_type = "location", completion = true },
-    chars = { type = "reference-list", ref_type = "character", completion = true },
-    locs = { type = "reference-list", ref_type = "location", completion = true },
-    items = { type = "reference-list", ref_type = "item", completion = true },
-    orgs = { type = "reference-list", ref_type = "organization", completion = true },
-    setup = { type = "thread-key", completion = true },
-    payoff = { type = "thread-key", completion = true },
-    time = { type = "string" },
-    day = { type = "string" },
-    time_of_day = { type = "string" },
-  },
-  chapter_fields = {
-    "type", "pov", "location", "status", "planning", "target",
-    "chars", "locs", "items", "orgs", "ignore", "tags", "aliases", "names",
-  },
-  chapter_field_defs = {
-    status = { type = "enum", from = "statuses", completion = true },
-    pov = { type = "reference", ref_type = "character", completion = true },
-    location = { type = "reference", ref_type = "location", completion = true },
-    chars = { type = "reference-list", ref_type = "character", completion = true },
-    locs = { type = "reference-list", ref_type = "location", completion = true },
-    items = { type = "reference-list", ref_type = "item", completion = true },
-    orgs = { type = "reference-list", ref_type = "organization", completion = true },
-  },
-  list_fields = { "tags", "chars", "locs", "items", "orgs", "ignore", "aliases", "names" },
-  scene_sentinel = "storyteller: scene",
-  reference_types = {
-    character = { dir = "characters", label = "Character", field = "chars", body = { "Role", "Notes" }, min_fields = { "Role" } },
-    location = { dir = "locations", label = "Location", field = "locs", body = { "Atmosphere", "Notes" }, min_fields = {} },
-    item = { dir = "items", label = "Item", field = "items", body = { "Type", "Notes" }, min_fields = {} },
-    organization = { dir = "organizations", label = "Organization", field = "orgs", body = { "Wants", "Members", "Notes" }, min_fields = {} },
-  },
-  diagnostics = {
-    unknown_field = true,
-    invalid_enum = true,
-    missing_id = false,
-    unresolved_setup = true,
-    unresolved_payoff = true,
-    timeline_regression = true,
-    duplicate_alias = true,
-    missing_min_fields = true,
-    duplicate_id = true,
-    incomplete_beat = true,
-    over_target = true,
-    chars_not_mentioned = true,
-  },
-}
+-- Loaded from the bundled canonical schema.json at module-require time.
+-- The file is a committed copy of the storyteller standard repo's schema.
+local schema_path = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
+  .. "/schema.json"
+local ok, DEFAULTS = pcall(vim.json.decode, table.concat(vim.fn.readfile(schema_path), "\n"))
+if not ok or not DEFAULTS then
+  vim.notify("[storyteller] Failed to load bundled schema.json; schema vocabulary unavailable.", vim.log.levels.ERROR)
+  DEFAULTS = {}
+end
 
 -- --- Merge recipe (mirrors server/src/schema.rs; keep in lockstep) ----------
 
@@ -178,6 +120,7 @@ end
 -- Sync the M.* tables from a merged schema (last-loaded root wins).
 local function apply(merged)
   merged = merged or {}
+  M.version = merged.version or "1.0.0"
   M.statuses = merged.statuses or {}
   M.status_next = merged.status_next or {}
   M.enums = merged.enums or {}

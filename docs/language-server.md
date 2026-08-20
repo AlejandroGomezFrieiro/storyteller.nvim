@@ -32,9 +32,13 @@ vim.lsp.config("storyteller", {
 vim.lsp.enable("storyteller")
 ```
 
-The repository's Nix flake exposes the binary as
-`packages.<system>.storyteller-lsp`. Other editor integrations can launch the
-same executable over standard input and output.
+`storyteller-lsp` is the reference implementation of the open
+[Storyteller standard](https://github.com/AlejandroGomezFrieiro/storyteller),
+which also defines the project format and the CLI contract. The standard
+repo's Nix flake exposes the binary as `packages.<system>.storyteller-lsp`;
+this plugin's flake re-exposes it. Other editor integrations can launch the
+same executable over standard input and output — see
+`spec/editor-integrations.md` in the standard repo.
 
 The client attaches to Markdown buffers under a project root. Root detection
 prefers an explicit `.storyteller` marker, then a Storyteller-style layout, and
