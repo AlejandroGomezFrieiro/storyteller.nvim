@@ -45,27 +45,57 @@ the Rust `tui/`.
 Nothing the plugin reads was removed in v1.2/v1.3, so nothing hard-breaks
 today. The work is **parity drift** first, then **feature adoption**.
 
+Three properties of the current tree constrain the design:
+
+- **The meta layer does not parse flow maps.** `meta/read.lua` reads `key:`
+  lists as plain strings, so an `also:` entry arrives as
+  `"{ timeline: Past, at: 40 }"`. This is the right shape to keep:
+  `meta/serde.lua::encode_map` writes list items with `tostring()`, so any
+  flow map parsed into a Lua table would corrupt the YAML on write-back.
+  Views must parse placement strings themselves (the same discipline
+  `relations.lua` already applies to edge maps).
+- **Everything downstream of compilation comes for free once Tier 0 lands.**
+  Fountain export (`import.lua`) and every manuscript view route through
+  `compile.manuscript`, so the unused-scene exclusion propagates without
+  further work.
+- **Two newer modules are natural adoption points**: `templates.lua`
+  scaffolds story structures as chapter files (Kindling-style beats), and
+  `collections.lua` filters scenes through a `key:value` query grammar. Both
+  extend naturally onto v1.2 concepts (see Tier 2).
+
 ## Tier 0 — correctness parity (do first)
 
 | # | Item | Files | Change |
 | --- | --- | --- | --- |
 | 1 | Bundled schema is frozen at **v1.1.0** (4 narrative modes, no `plotline`/`event` types, missing `also`/`plotlines`/`stage`/`events`/`at` and the new gates) while the server defaults to 1.3.0 — plugin-side field validation diverges from server diagnostics | `lua/storyteller/schema.json` | Replace with the canonical `crates/core/schema.json` verbatim; `schema.lua` merges it with project overrides, so this is a single-file fix |
-| 2 | **Compile divergence**: the server excludes `status: unused` scenes and chapters; `strip_metadata` here is verbatim, so plugin-rendered manuscripts and word totals disagree with `storyteller.compile` on any project that shelves work | `lua/storyteller/compile.lua` (strip_metadata ~107, manuscript assembly ~190), consumers in `ui/views.lua`, `ui/dashboard.lua`, `commands.lua` | Port the exclusion into scene-range stripping; keep the `include_statuses` preset as an additional filter on top |
-| 3 | TUI parses only `day` (not `at`/`time`), includes unused scenes, and sorts a single implicit axis | `tui/src/project.rs` (field parse ~101, sort ~186) | Same two fixes; add `at` fallback after `day` |
+| 2 | **Compile divergence**: the server excludes `status: unused` scenes and chapters; `strip_metadata` here is verbatim, so plugin-rendered manuscripts and word totals disagree with `storyteller.compile` on any project that shelves work. Everything downstream (`ui/views.lua`, `ui/dashboard.lua`, `commands.lua`, Fountain export in `import.lua`) inherits the fix through `compile.manuscript` | `lua/storyteller/compile.lua` (strip_metadata ~107, manuscript assembly ~184–190) | Port the exclusion into scene-range stripping; keep the `include_statuses` preset as an additional filter on top |
+| 3 | TUI parses only `day` (not `at`/`time`), includes unused scenes, and sorts a single implicit axis | `tui/src/project.rs` (field parse ~101, `timeline()` ~186) | Same two fixes; add `at` fallback after `day`. (`theme.rs`/expanded `ui.rs` are presentation-only — no model coupling) |
+
+## Reevaluated against the current tree
+
+Verified unchanged since this plan was drafted: bundled schema still v1.1.0,
+compile still verbatim, `M.timeline` still single-axis numeric, relations
+still discard edge payloads, card parsing still ignores both bullets and
+headings. Newer modules (`compose.lua`, `notes.lua`, `track.lua`,
+`tui/src/theme.rs`) carry no project-model coupling. The plan above already
+reflects the additions: flow-map handling constraints, the import/export
+inheritance path, and the templates/collections adoption options.
 
 ## Tier 1 — adopt axes & placements
 
-4. `index.lua::M.timeline` (~line 330): currently one implicit axis reading
+4. `index.lua::M.timeline` (~line 332): currently one implicit axis reading
    `day`/`time` with a global numeric sort → build **per-axis placement
    lists** (primary placement plus each `also:` flow-map), coordinate
    resolution `at` › `day` › `time`, regression flag computed per axis.
+   Keep `also:` entries as opaque strings in scene meta; parse them only in
+   the projection layer (see the flow-map caveat above).
 5. Ordinals & offsets: reference cards already keep their full frontmatter
    (`parse_reference` → `meta`), so timeline cards' `order`/`origin`/`unit`
    are available — use them for sorting (rank) and display (`unit`).
 6. `projections/timeline.lua`: the `day` column becomes a coordinate column
-   (`raw`); sorting is rank-then-manuscript. `ui/storyboard.lua::shift_day`
-   stays numeric-only — guard it: refuse to shift non-numeric coordinates
-   instead of mis-shifting silently.
+   (`raw`); sorting is rank-then-manuscript, grouped or tagged per axis.
+   `ui/storyboard.lua::shift_day` stays numeric-only — guard it: refuse to
+   shift non-numeric coordinates instead of mis-shifting silently.
 7. `relations.lua::parse_relation_item`: capture extra edge attributes
    (`attrs`), and **filter `kind: syncs_with` edges out of the character
    graph** — they connect timelines, not people.
@@ -78,10 +108,18 @@ today. The work is **parity drift** first, then **feature adoption**.
    `lsp.command("storyteller.plotlines")` when a client is attached.
 9. Meta form needs no structural change (it iterates live schema), but verify
    `meta/serde.encode_map` round-trips the three new list fields (`also`,
-   `plotlines`, `events`).
+   `plotlines`, `events`) as string/scalar lists — they must stay
+   table-free for the reason above.
 10. Optional: surface `story_health`-style findings from the new gates
     (`stage_regression`, `orphan_plotline`, `uncovered_stage`) — or simply
     rely on server diagnostics when attached.
+11. Optional — `templates.lua`: when scaffolding a beat-sheet structure,
+    also emit a matching `references/plotlines/<name>.md` card whose
+    `stages:` sequence is the template's beats, so scaffolded chapters land
+    on a real track instead of bare chapter names.
+12. Optional — `collections.lua`: extend the query grammar with
+    `plotline:` / `stage:` / `timeline:` keys (they are ordinary scene-meta
+    lookups once Tier 0's schema sync lands).
 
 ## Tier 3 — heading-form cards
 
