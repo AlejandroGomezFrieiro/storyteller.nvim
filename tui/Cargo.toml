@@ -1,0 +1,15 @@
+[package]
+name = "storyteller-tui"
+version = "0.3.0"
+edition = "2021"
+license = "MIT"
+description = "Keyboard-first cockpit for Storyteller writing projects (ratatui frontend)"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+anyhow = "1"
+
+[[bin]]
+name = "storyteller-tui"
+path = "src/main.rs"
