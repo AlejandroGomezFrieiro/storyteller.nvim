@@ -22,11 +22,13 @@ pub struct Scene {
     pub words: usize,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct Chapter {
     pub title: String,
     pub file: PathBuf,
     pub words: usize,
+    pub target: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -111,6 +113,7 @@ pub fn load(root: &Path) -> Result<Project> {
             title: file.file_stem().unwrap_or_default().to_string_lossy().to_string(),
             file: file.clone(),
             words: 0,
+            target: None,
         };
         let mut in_fence = false;
         let mut current: Option<Scene> = None;
@@ -118,6 +121,12 @@ pub fn load(root: &Path) -> Result<Project> {
         let mut in_yaml = false;
 
         for (i, line) in lines.iter().enumerate() {
+            // Chapter target: a `target:` key in the leading frontmatter.
+            if current.is_none() && chapter.target.is_none() {
+                if let Some(rest) = line.strip_prefix("target:") {
+                    chapter.target = rest.trim().parse().ok();
+                }
+            }
             if line.starts_with("# ") && chapter.title == file.file_stem().unwrap_or_default().to_string_lossy() {
                 chapter.title = line[2..].trim().to_string();
             }
@@ -187,6 +196,7 @@ impl Project {
         scenes
     }
 
+    #[allow(dead_code)]
     pub fn by_status(&self, status: &str) -> Vec<&Scene> {
         self.scenes
             .iter()

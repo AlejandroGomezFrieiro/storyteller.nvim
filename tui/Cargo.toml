@@ -6,9 +6,11 @@ license = "MIT"
 description = "Keyboard-first cockpit for Storyteller writing projects (ratatui frontend)"
 
 [dependencies]
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.28"
 anyhow = "1"
+termprofile = { version = "0.2", features = ["ratatui", "convert"] }
+unicode-width = "0.2"
 
 [[bin]]
 name = "storyteller-tui"
