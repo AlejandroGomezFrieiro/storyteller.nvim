@@ -3,6 +3,8 @@ names:
   - Odysseus
   - Ody
   - King of Ithaca
+relations:
+  - { to: Penelope, kind: spouse }
 ---
 
 ## Odysseus

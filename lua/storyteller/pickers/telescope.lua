@@ -4,11 +4,11 @@
 local M = {}
 
 local function require_ok(mod)
-  local ok, mod = pcall(require, mod)
+  local ok, loaded = pcall(require, mod)
   if not ok then
     return nil
   end
-  return mod
+  return loaded
 end
 
 -- Convert a kind into a telescope builtin callable.
@@ -30,7 +30,7 @@ local BUILTIN = {
 
 M.pick = function(kind, opts)
   opts = opts or {}
-  local tb = require_ok "telescope.builtin"
+  local tb = require_ok("telescope.builtin")
   if not tb then
     return
   end
@@ -42,11 +42,11 @@ end
 
 M.pick_list = function(entries, opts)
   opts = opts or {}
-  local presenters = require_ok "telescope.pickers"
-  local finders = require_ok "telescope.finders"
-  local sorters = require_ok "telescope.sorters"
-  local actions = require_ok "telescope.actions"
-  local state = require_ok "telescope.actions.state"
+  local presenters = require_ok("telescope.pickers")
+  local finders = require_ok("telescope.finders")
+  local sorters = require_ok("telescope.sorters")
+  local actions = require_ok("telescope.actions")
+  local state = require_ok("telescope.actions.state")
 
   if not (presenters and finders and sorters and actions and state) then
     return require("storyteller.pickers.fallback").pick_list(entries, opts)
@@ -57,26 +57,28 @@ M.pick_list = function(entries, opts)
     results[#results + 1] = { value = e.value, display = e.display or tostring(e.value) }
   end
 
-  presenters.new({
-    bufnr = opts.bufnr or vim.api.nvim_get_current_buf(),
-    prompt_title = opts.prompt_title or "Storyteller",
-    results_title = opts.results_title,
-    finder = finders.new_table({ results = results }),
-    sorter = sorters.get_generic_fuzzy_sorter({}),
-    attach_mappings = function(prompt_bufnr)
-      actions.select_default:replace(function()
-        local entry = state.get_selected_entry()
-        actions.close(prompt_bufnr)
-        if entry then
-          local action = vim.g.storyteller_last_action or "default"
-          if opts.on_select then
-            opts.on_select(entry.value, action)
+  presenters
+    .new({
+      bufnr = opts.bufnr or vim.api.nvim_get_current_buf(),
+      prompt_title = opts.prompt_title or "Storyteller",
+      results_title = opts.results_title,
+      finder = finders.new_table({ results = results }),
+      sorter = sorters.get_generic_fuzzy_sorter({}),
+      attach_mappings = function(prompt_bufnr)
+        actions.select_default:replace(function()
+          local entry = state.get_selected_entry()
+          actions.close(prompt_bufnr)
+          if entry then
+            local action = vim.g.storyteller_last_action or "default"
+            if opts.on_select then
+              opts.on_select(entry.value, action)
+            end
           end
-        end
-      end)
-      return true
-    end,
-  }):find()
+        end)
+        return true
+      end,
+    })
+    :find()
 end
 
 return M

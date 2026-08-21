@@ -4,7 +4,6 @@
 -- attached, `commands.lua` may delegate card generation to the server instead.
 
 local project = require("storyteller.project")
-local index = require("storyteller.index")
 local schema = require("storyteller.schema")
 
 local M = {}
@@ -45,7 +44,6 @@ end
 
 -- Card content, by type folder. Mirrors the shared schema.json templates.
 function M.card_lines(ftype, name)
-  local name = name
   local body = {}
   for _, label in ipairs(schema.type_body(ftype)) do
     body[#body + 1] = "- **" .. label .. ":** "
@@ -101,7 +99,10 @@ function M.create(prj, ftype, name)
     return path
   end
   vim.fn.writefile(M.card_lines(ftype, name), path)
-  vim.notify(("[storyteller] Created %s card: %s"):format(schema.type_label(ftype), path), vim.log.levels.INFO)
+  vim.notify(
+    ("[storyteller] Created %s card: %s"):format(schema.type_label(ftype), path),
+    vim.log.levels.INFO
+  )
   return path
 end
 

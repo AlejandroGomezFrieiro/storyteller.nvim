@@ -45,6 +45,12 @@ M.setup = function(opts)
   km.register("<leader>sT", "<cmd>Story template<cr>", "Template")
   km.register("<leader>sw", "<cmd>Story workspace<cr>", "Workspace")
   km.register("<leader>si", "<cmd>Story idea<cr>", "Capture idea")
+  km.register("<leader>sa", "<cmd>Story annotations<cr>", "Annotations")
+  km.register("<leader>sN", function()
+    require("storyteller.notes").capture()
+  end, "Capture note from selection")
+  km.register("<leader>sC", "<cmd>Story collections<cr>", "Collections")
+  km.register("<leader>sz", "<cmd>Story compose<cr>", "Composition mode")
   km.ensure()
 
   -- Visual-mode: create a reference card from the selection.

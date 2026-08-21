@@ -17,7 +17,11 @@ M.pick = function(kind, opts)
   if kind == "files" then
     f.files({ cwd = opts.cwd, prompt = opts.prompt_title or "Storyteller files> " })
   elseif kind == "grep" then
-    f.grep({ cwd = opts.cwd, search = opts.search or "", prompt = opts.prompt_title or "Storyteller grep> " })
+    f.grep({
+      cwd = opts.cwd,
+      search = opts.search or "",
+      prompt = opts.prompt_title or "Storyteller grep> ",
+    })
   elseif kind == "buffers" then
     f.buffers({ prompt = opts.prompt_title or "Buffers> " })
   end

@@ -61,12 +61,28 @@ register("prev", "Previous scene", function(prj)
   require("storyteller.ui.views").next(-1, prj)
 end)
 
-register("corkboard", "Scene cards", function(prj, args)
-  require("storyteller.ui.views").corkboard(prj, args[2])
+register("corkboard", "Scene cards (editable storyboard)", function(prj)
+  require("storyteller.ui.storyboard").open("corkboard", prj)
 end)
 
-register("timeline", "Story chronology", function(prj)
-  require("storyteller.ui.views").timeline(prj)
+register("timeline", "Story chronology (editable storyboard)", function(prj)
+  require("storyteller.ui.storyboard").open("timeline", prj)
+end)
+
+register("synopsis", "Synopsis outliner (editable storyboard)", function(prj)
+  require("storyteller.ui.storyboard").open("synopsis", prj)
+end)
+
+register("metasheet", "Bulk scene metadata editor", function(prj)
+  require("storyteller.ui.storyboard").open("metasheet", prj)
+end)
+
+register("relations", "Character relationship map", function(prj)
+  prj = need(prj)
+  if not prj then
+    return
+  end
+  require("storyteller.ui.views").relations(prj)
 end)
 
 register("threads", "Plot setup and payoff planner", function(prj)
@@ -183,8 +199,32 @@ register("snapshots", "List git snapshots", function(prj)
   end
   pickers.pick_list(entries, {
     prompt_title = "Storyteller snapshots",
-    on_select = function() end,
+    on_select = function(s)
+      snapshot.diff(prj, s)
+    end,
+    keys_note = "<CR> diff",
   })
+end)
+
+register("diff", "Diff working tree against a snapshot", function(prj, args)
+  prj = need(prj)
+  if not prj then
+    return
+  end
+  local snaps = snapshot.list(prj)
+  if #snaps == 0 then
+    vim.notify("[storyteller] No snapshots yet.", vim.log.levels.INFO)
+    return
+  end
+  if args[2] then
+    for _, s in ipairs(snaps) do
+      if s:find(args[2], 1, true) then
+        snapshot.diff(prj, s)
+        return
+      end
+    end
+  end
+  snapshot.diff(prj, nil)
 end)
 
 -- --- References -------------------------------------------------------------
@@ -231,7 +271,10 @@ register("detect", "Detect references", function(prj, args)
     end
   end
   vim.notify(
-    ("[storyteller] Detected %d suggestion(s); auto-linked %d confident match(es)."):format(total, linked),
+    ("[storyteller] Detected %d suggestion(s); auto-linked %d confident match(es)."):format(
+      total,
+      linked
+    ),
     vim.log.levels.INFO
   )
 end)
@@ -282,6 +325,109 @@ end)
 
 register("workspace", "Toggle the binder+inspector workspace", function(prj)
   require("storyteller.ui.workspace").toggle(prj)
+end)
+
+-- Launch the ratatui cockpit inside a terminal buffer. Normal mode stays in
+-- Neovim (j/k scrolls); press `i` to drive the TUI, `q` inside it to return.
+register("tui", "Open the storyteller TUI dashboard", function(prj)
+  prj = need(prj)
+  if not prj then
+    return
+  end
+  local bin = require("storyteller.config").bin("tui_bin")
+  if not bin then
+    vim.notify(
+      "[storyteller] storyteller-tui not found (see :help storyteller-tui).",
+      vim.log.levels.WARN
+    )
+    return
+  end
+  vim.cmd("enew")
+  -- Theme parity: pass the editor's background plus any configured theme
+  -- overrides (docs/tui-visual-plan.md §10).
+  local cfg = require("storyteller.config").get()
+  local argv = { bin, "--background", vim.o.background == "light" and "light" or "dark" }
+  if cfg.tui_theme then
+    table.insert(argv, "--theme")
+    table.insert(argv, cfg.tui_theme)
+  end
+  if cfg.tui_glyphs then
+    table.insert(argv, "--glyphs")
+    table.insert(argv, cfg.tui_glyphs)
+  end
+  vim.fn.termopen(argv, { cwd = prj.root })
+  vim.wo.winbar = "%#StorytellerTitle# Storyteller TUI %#StorytellerMuted i interact · q quits TUI"
+end)
+
+register("compose", "Distraction-free composition mode", function()
+  require("storyteller.compose").toggle()
+end)
+
+-- --- Review -----------------------------------------------------------------
+
+register("note", "Capture an annotation from the selection", function(prj, args)
+  prj = need(prj)
+  if not prj then
+    return
+  end
+  local title = table.concat({ unpack(args, 2) }, " ")
+  local entry = require("storyteller.notes").capture(prj, title ~= "" and title or nil)
+  if entry then
+    vim.notify("[storyteller] Note captured to notes/annotations.md.", vim.log.levels.INFO)
+  end
+end)
+
+register("annotations", "Review annotations", function(prj)
+  require("storyteller.ui.views").annotations(prj)
+end)
+
+register("collections", "Saved searches over scenes", function(prj)
+  require("storyteller.ui.views").collections(prj)
+end)
+
+register("collect", "Run a one-off scene query", function(prj, args)
+  prj = need(prj)
+  if not prj then
+    return
+  end
+  local query = table.concat({ unpack(args, 2) }, " ")
+  if query == "" then
+    vim.notify("[storyteller] Usage: :Story collect status:draft tag:war", vim.log.levels.WARN)
+    return
+  end
+  require("storyteller.ui.views").collection_run(prj, { name = query, query = query })
+end)
+
+-- --- Migration --------------------------------------------------------------
+
+register("import", "Import a Scrivener .scrivx project", function(prj, args)
+  prj = need(prj)
+  if not prj then
+    return
+  end
+  local path = args[2]
+  if not path or path == "" then
+    vim.notify("[storyteller] Usage: :Story import /path/to/project.scrivx", vim.log.levels.WARN)
+    return
+  end
+  local n = require("storyteller.import").import_scrivx(prj, vim.fn.expand(path))
+  if n then
+    vim.notify(
+      ("[storyteller] Imported %d document(s) into chapters/."):format(n),
+      vim.log.levels.INFO
+    )
+  end
+end)
+
+register("fountain", "Export the manuscript as Fountain", function(prj)
+  prj = need(prj)
+  if not prj then
+    return
+  end
+  local path = require("storyteller.import").export_fountain(prj)
+  if path then
+    vim.notify("[storyteller] Wrote " .. path, vim.log.levels.INFO)
+  end
 end)
 
 register("palette", "Command palette", function()
@@ -342,6 +488,9 @@ function M.setup()
   end, {
     nargs = "*",
     bang = true,
+    -- Acceptable from visual mode (`:'<,'>Story note`) so selection-based
+    -- commands work; the range itself is ignored.
+    range = true,
     complete = "customlist,v:lua.require'storyteller.commands'.complete",
     desc = "Storyteller commands",
   })

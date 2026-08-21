@@ -40,7 +40,10 @@ function M.open(prj)
     local id = meta.scene(scene).meta.id
     if (saved.id and id == saved.id) or (not saved.id and scene.path == saved.path) then
       vim.cmd("edit " .. vim.fn.fnameescape(scene.path))
-      vim.api.nvim_win_set_cursor(0, { math.max(scene.start_line, saved.line or scene.start_line), 0 })
+      vim.api.nvim_win_set_cursor(
+        0,
+        { math.max(scene.start_line, saved.line or scene.start_line), 0 }
+      )
       return scene
     end
   end

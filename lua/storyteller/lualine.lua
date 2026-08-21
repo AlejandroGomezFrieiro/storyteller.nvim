@@ -18,7 +18,7 @@ M.component = function()
       cond = function()
         return vim.bo.filetype == "markdown"
       end,
-    }
+    },
   }
 end
 
@@ -41,7 +41,7 @@ end
 -- configuration, so callers should use `component()` or `apply_to()` before
 -- calling lualine.setup(). Kept as a capability probe for compatibility.
 M.patch = function()
-  local ok, lualine = pcall(require, "lualine")
+  local ok = pcall(require, "lualine")
   if not ok then
     return false
   end

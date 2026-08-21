@@ -1,12 +1,18 @@
 -- storyteller.compile
 -- Unified compilation: a metadata-free longform manuscript, the two-way
--- "Scrivenings" editable view, and Pandoc export.
+-- "Scrivenings" editable view, Pandoc export, inline annotations, and
+-- per-project compile presets.
 --
---   compile.manuscript(prj)      -> metadata-free longform lines
---   compile.write_manuscript(prj)-> write build/manuscript.md
---   compile.open(prj, {bang})    -> editable continuous manuscript buffer
---   compile.export(prj, fmt)     -> pandoc manuscript export
---   compile.export_all(prj, fmt) -> per-chapter export
+-- Annotation conventions (stripped from every compiled/exported artifact):
+--   %%inline note%%      — an inline comment inside prose
+--   %%rest-of-line note  — a full-line comment
+--
+-- Compile presets live at `.storyteller/compile.json`:
+--   {
+--     "include_statuses": ["done", "revision"],  -- omit to include everything
+--     "pandoc_args": ["--toc"],
+--     "title": "My Novel"
+--   }
 
 local project = require("storyteller.project")
 local index = require("storyteller.index")
@@ -20,6 +26,74 @@ local function join(...)
   return table.concat({ ... }, "/")
 end
 
+-- --- Compile presets --------------------------------------------------------
+
+-- Load `.storyteller/compile.json`, falling back to permissive defaults.
+function M.preset(prj)
+  prj = prj or project.current()
+  local p = { include_statuses = nil, pandoc_args = {}, title = nil }
+  if not prj then
+    return p
+  end
+  local path = join(prj.root, ".storyteller", "compile.json")
+  if vim.loop.fs_stat(path) then
+    local ok, lines = pcall(vim.fn.readfile, path)
+    if ok then
+      local ok2, data = pcall(vim.json.decode, table.concat(lines, "\n"))
+      if ok2 and type(data) == "table" then
+        if type(data.include_statuses) == "table" then
+          p.include_statuses = data.include_statuses
+        end
+        if type(data.pandoc_args) == "table" then
+          p.pandoc_args = data.pandoc_args
+        end
+        if type(data.title) == "string" then
+          p.title = data.title
+        end
+      else
+        vim.notify(
+          "[storyteller] Invalid .storyteller/compile.json (ignored).",
+          vim.log.levels.WARN
+        )
+      end
+    end
+  end
+  return p
+end
+
+-- --- Annotations ------------------------------------------------------------
+
+local function strip_inline_annotation(ln)
+  ln = ln:gsub("%%%%[^%%]*%%%%", "")
+  return ln
+end
+
+function M.is_annotation(ln)
+  return ln:match("^%s*%%%%") ~= nil
+end
+
+-- Collect every annotation in the project: { path, line, text }.
+function M.annotations(prj)
+  prj = prj or project.current()
+  local out = {}
+  if not prj then
+    return out
+  end
+  for _, ch in ipairs(index.chapters(prj)) do
+    for i, ln in ipairs(index.cached_lines(ch.path)) do
+      if M.is_annotation(ln) then
+        out[#out + 1] = { path = ch.path, line = i, text = (ln:gsub("^%s*%%%%%s*", "")) }
+      else
+        local inline = ln:match("%%%%([^%%]+)%%%%")
+        if inline then
+          out[#out + 1] = { path = ch.path, line = i, text = vim.trim(inline), inline = true }
+        end
+      end
+    end
+  end
+  return out
+end
+
 -- --- Metadata stripping -----------------------------------------------------
 
 -- Turn chapter lines into prose-only lines:
@@ -27,6 +101,7 @@ end
 --   * drop ```yaml storyteller: scene``` metadata blocks
 --   * drop inline `- **Key:** value` metadata bullets
 --   * drop `- [ ]` planning checklists
+--   * drop %%annotations%% and %%rest-of-line annotations
 -- Everything else (headings, prose, real lists, non-scene code fences)
 -- is preserved verbatim.
 function M.strip_metadata(lines)
@@ -54,24 +129,64 @@ function M.strip_metadata(lines)
         in_scene_yaml = false
       end
     else
+      if M.is_annotation(ln) then
+        goto continue
+      end
+      ln = strip_inline_annotation(ln)
       local inline = ln:match("^%s*%-%s*%*%*%s*[%a%w_]+%s*[:]%s*%*%*") ~= nil
         or ln:match("^%s*%-%s*%*%*%s*[%a%w_]+%s*%*%*%s*:")
       if not inline and not ln:match("^%s*%-%s*%[[ xX]%]%s*") then
         out[#out + 1] = ln
       end
     end
+    ::continue::
   end
   return out
 end
 
 -- --- Manuscript -------------------------------------------------------------
 
--- Metadata-free longform for the whole project.
+-- Keep only the `## ` scenes whose `status:` is listed; everything outside
+-- scene bodies (chapter heading, frontmatter, prose before first scene) is kept.
+local function filter_scenes(raw, include)
+  local out = {}
+  local i, n = 1, #raw
+  while i <= n do
+    if raw[i]:match("^##%s+") then
+      local j = i + 1
+      while j <= n and not raw[j]:match("^##%s+") do
+        j = j + 1
+      end
+      local status
+      for k = i + 1, j - 1 do
+        status = status or raw[k]:match("^%s*status:%s*(%S+)")
+      end
+      if status and vim.tbl_contains(include, status) then
+        for k = i, j - 1 do
+          out[#out + 1] = raw[k]
+        end
+      end
+      i = j
+    else
+      out[#out + 1] = raw[i]
+      i = i + 1
+    end
+  end
+  return out
+end
+
+-- Metadata-free longform for the whole project. A preset's include_statuses
+-- filters scenes (chapter frontmatter still applies to kept scenes).
 function M.manuscript(prj)
   prj = prj or project.current()
   local out = {}
+  local preset = M.preset(prj)
+  local include = preset.include_statuses
   for _, ch in ipairs(index.chapters(prj)) do
-    local raw = vim.fn.readfile(ch.path) or {}
+    local raw = index.cached_lines(ch.path) or {}
+    if include then
+      raw = filter_scenes(raw, include)
+    end
     vim.list_extend(out, M.strip_metadata(raw))
     out[#out + 1] = ""
     out[#out + 1] = ""
@@ -140,6 +255,48 @@ local function find_line(lines, hdr, from)
   return nil
 end
 
+-- Find the best occurrence of `hdr` at or after `from`. The first occurrence
+-- wins unless its context no longer matches the chunk's snapshot head — in
+-- which case we look for a candidate whose following lines do match (guards
+-- against duplicated/quoted headers inside prose mis-slicing write-backs).
+local function find_chunk_start(lines, chunk, from)
+  local candidates = {}
+  for i = from or 1, #lines do
+    if lines[i] == chunk.header then
+      candidates[#candidates + 1] = i
+    end
+  end
+  if #candidates <= 1 then
+    return candidates[1]
+  end
+  local snap = chunk.snapshot or {}
+  local function context_score(hp)
+    local score = 0
+    for k = 1, math.min(5, #snap) do
+      if lines[hp + k] == snap[k] then
+        score = score + 1
+      else
+        break
+      end
+    end
+    return score
+  end
+
+  local first = candidates[1]
+  if #snap == 0 or context_score(first) > 0 then
+    return first
+  end
+  -- First occurrence drifted; prefer a candidate whose context matches.
+  local best, best_score = first, -1
+  for _, hp in ipairs(candidates) do
+    local score = context_score(hp)
+    if score > best_score then
+      best, best_score = hp, score
+    end
+  end
+  return best
+end
+
 local function sync_source_buffers(path, lines)
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_get_name(bufnr) == path then
@@ -147,8 +304,9 @@ local function sync_source_buffers(path, lines)
         vim.bo[bufnr].readonly = true
         vim.b[bufnr].storyteller_scrivenings_conflict = true
         vim.notify(
-          ("[storyteller] Scrivenings wrote %s; its modified buffer is now read-only.")
-            :format(vim.fn.fnamemodify(path, ":t")),
+          ("[storyteller] Scrivenings wrote %s; its modified buffer is now read-only."):format(
+            vim.fn.fnamemodify(path, ":t")
+          ),
           vim.log.levels.WARN
         )
       else
@@ -174,7 +332,7 @@ local function writeback(buf)
   local pos = 1
   for i, chunk in ipairs(chunks) do
     local next_chunk = chunks[i + 1]
-    local hp = find_line(lines, chunk.header, pos)
+    local hp = find_chunk_start(lines, chunk, pos)
     if hp then
       local stop
       if next_chunk then
@@ -235,7 +393,8 @@ function M.open(prj, opts)
 
   if existing and vim.api.nvim_buf_is_valid(existing) then
     if vim.bo[existing].modified and opts.bang then
-      local answer = vim.fn.confirm("Discard unsaved Scrivenings edits and rebuild?", "&Discard\n&Cancel", 2)
+      local answer =
+        vim.fn.confirm("Discard unsaved Scrivenings edits and rebuild?", "&Discard\n&Cancel", 2)
       if answer ~= 1 then
         vim.api.nvim_set_current_buf(existing)
         return existing
@@ -314,11 +473,18 @@ local function reference_doc()
 end
 
 local function have_pandoc()
-  return vim.fn.executable("pandoc") == 1
+  return config.bin("pandoc") ~= nil
 end
 
-local function run_pandoc(args)
-  local parts = { "pandoc" }
+-- Run pandoc, appending any preset's extra args. `extra` are per-call flags.
+local function run_pandoc(prj, args)
+  local bin = config.bin("pandoc") or "pandoc"
+  local parts = { bin }
+  if prj then
+    for _, a in ipairs(M.preset(prj).pandoc_args or {}) do
+      parts[#parts + 1] = tostring(a)
+    end
+  end
   for _, a in ipairs(args) do
     parts[#parts + 1] = a
   end
@@ -384,10 +550,13 @@ function M.export_file(prj, file, fmt)
     if ref then
       args[#args + 1] = "--reference-doc=" .. ref
     else
-      vim.notify("[storyteller] No reference.docx found; exporting smf without a reference doc.", vim.log.levels.WARN)
+      vim.notify(
+        "[storyteller] No reference.docx found; exporting smf without a reference doc.",
+        vim.log.levels.WARN
+      )
     end
   end
-  local ok = run_pandoc(args)
+  local ok = run_pandoc(prj, args)
   vim.fn.delete(src)
   if not ok then
     vim.notify("[storyteller] pandoc failed.", vim.log.levels.ERROR)
@@ -407,7 +576,10 @@ function M.export(prj, fmt)
     return nil
   end
   if not have_pandoc() then
-    vim.notify("[storyteller] pandoc not found; manuscript export unavailable.", vim.log.levels.ERROR)
+    vim.notify(
+      "[storyteller] pandoc not found; manuscript export unavailable.",
+      vim.log.levels.ERROR
+    )
     return nil
   end
   vim.fn.mkdir(prj.build, "p")
@@ -425,10 +597,13 @@ function M.export(prj, fmt)
     if ref then
       args[#args + 1] = "--reference-doc=" .. ref
     else
-      vim.notify("[storyteller] No reference.docx found; smf exported without a reference doc.", vim.log.levels.WARN)
+      vim.notify(
+        "[storyteller] No reference.docx found; smf exported without a reference doc.",
+        vim.log.levels.WARN
+      )
     end
   end
-  local ok = run_pandoc(args)
+  local ok = run_pandoc(prj, args)
   if not ok then
     vim.notify("[storyteller] pandoc failed.", vim.log.levels.ERROR)
     return nil

@@ -15,6 +15,7 @@ use ratatui::{
     crossterm::{
         event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
         execute,
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen},
     },
     Terminal,
 };
@@ -84,7 +85,11 @@ fn main() -> Result<()> {
 
     let backend = CrosstermBackend::new(std::io::stdout());
     let mut terminal = Terminal::new(backend)?;
-    execute!(stdout(), event::EnableMouseCapture)?;
+    execute!(
+        stdout(),
+        event::EnableMouseCapture,
+        EnterAlternateScreen
+    )?;
     terminal.hide_cursor()?;
 
     let mut tab = Tab::Dashboard;
@@ -150,7 +155,11 @@ fn main() -> Result<()> {
         }
     }
 
-    execute!(stdout(), event::DisableMouseCapture)?;
+    execute!(
+        stdout(),
+        event::DisableMouseCapture,
+        LeaveAlternateScreen
+    )?;
     terminal.show_cursor()?;
     Ok(())
 }

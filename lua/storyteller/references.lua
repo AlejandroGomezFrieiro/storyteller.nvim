@@ -27,7 +27,10 @@ local function ask_action(scene, sug, prj)
       vim.notify(("[storyteller] Dismissed %s."):format(sug.reference.name), vim.log.levels.INFO)
     elseif choice == "link all" then
       local n = detect.link_all(scene, prj)
-      vim.notify(("[storyteller] Auto-linked %s confident reference(s)."):format(n), vim.log.levels.INFO)
+      vim.notify(
+        ("[storyteller] Auto-linked %s confident reference(s)."):format(n),
+        vim.log.levels.INFO
+      )
     end
   end)
 end

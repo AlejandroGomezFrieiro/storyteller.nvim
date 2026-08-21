@@ -67,25 +67,79 @@ function M.open(prj)
         {
           title = "WRITE",
           actions = {
-            { key = "C", name = "Compile", run = function() compile.open(prj) end },
-            { key = "E", name = "Export", run = function() require("storyteller.commands").dispatch(prj, { "export" }) end },
-            { key = "S", name = "Session", run = function() require("storyteller.commands").dispatch(prj, { "session" }) end },
+            {
+              key = "C",
+              name = "Compile",
+              run = function()
+                compile.open(prj)
+              end,
+            },
+            {
+              key = "E",
+              name = "Export",
+              run = function()
+                require("storyteller.commands").dispatch(prj, { "export" })
+              end,
+            },
+            {
+              key = "S",
+              name = "Session",
+              run = function()
+                require("storyteller.commands").dispatch(prj, { "session" })
+              end,
+            },
           },
         },
         {
           title = "NAVIGATE",
           actions = {
-            { key = "O", name = "Outline", run = function() views.outline(prj) end },
-            { key = "B", name = "Corkboard", run = function() views.corkboard(prj) end },
-            { key = "W", name = "Workspace", run = function() require("storyteller.ui.workspace").toggle(prj) end },
+            {
+              key = "O",
+              name = "Outline",
+              run = function()
+                views.outline(prj)
+              end,
+            },
+            {
+              key = "B",
+              name = "Corkboard",
+              run = function()
+                require("storyteller.ui.storyboard").open("corkboard", prj)
+              end,
+            },
+            {
+              key = "W",
+              name = "Workspace",
+              run = function()
+                require("storyteller.ui.workspace").toggle(prj)
+              end,
+            },
           },
         },
         {
           title = "REVIEW",
           actions = {
-            { key = "T", name = "Tracking", run = function() views.track(prj) end },
-            { key = "Y", name = "Timeline", run = function() views.timeline(prj) end },
-            { key = "F", name = "Threads", run = function() views.threads(prj) end },
+            {
+              key = "T",
+              name = "Tracking",
+              run = function()
+                views.track(prj)
+              end,
+            },
+            {
+              key = "Y",
+              name = "Timeline",
+              run = function()
+                require("storyteller.ui.storyboard").open("timeline", prj)
+              end,
+            },
+            {
+              key = "F",
+              name = "Threads",
+              run = function()
+                views.threads(prj)
+              end,
+            },
           },
         },
       }
@@ -93,17 +147,47 @@ function M.open(prj)
         {
           title = "STORY",
           actions = {
-            { key = "M", name = "Scene meta", run = function() require("storyteller.ui.meta_form").edit(index.current_scene(prj)) end },
+            {
+              key = "M",
+              name = "Scene meta",
+              run = function()
+                require("storyteller.ui.meta_form").edit(index.current_scene(prj))
+              end,
+            },
             { key = "T", name = "Template", run = template_pick },
-            { key = "H", name = "Health", run = function() views.health(prj) end },
+            {
+              key = "H",
+              name = "Health",
+              run = function()
+                views.health(prj)
+              end,
+            },
           },
         },
         {
           title = "ORGANIZE",
           actions = {
-            { key = "R", name = "References", run = function() references.panel(prj) end },
-            { key = "D", name = "Detect", run = function() require("storyteller.commands").dispatch(prj, { "detect" }) end },
-            { key = "I", name = "Ideas", run = function() require("storyteller.commands").dispatch(prj, { "idea" }) end },
+            {
+              key = "R",
+              name = "References",
+              run = function()
+                references.panel(prj)
+              end,
+            },
+            {
+              key = "D",
+              name = "Detect",
+              run = function()
+                require("storyteller.commands").dispatch(prj, { "detect" })
+              end,
+            },
+            {
+              key = "I",
+              name = "Ideas",
+              run = function()
+                require("storyteller.commands").dispatch(prj, { "idea" })
+              end,
+            },
           },
         },
       }

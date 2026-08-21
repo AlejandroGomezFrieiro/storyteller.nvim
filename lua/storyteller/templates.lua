@@ -178,7 +178,10 @@ M.apply = function(prj, name)
     vim.notify(("[storyteller] Unknown template: %s"):format(tostring(name)), vim.log.levels.ERROR)
     return nil
   end
-  vim.fn.mkdir(plan.created and plan.created[1] and vim.fn.fnamemodify(plan.created[1], ":h") or prj.chapters, "p")
+  vim.fn.mkdir(
+    plan.created and plan.created[1] and vim.fn.fnamemodify(plan.created[1], ":h") or prj.chapters,
+    "p"
+  )
   local created, skipped = 0, 0
   for _i, part in ipairs(plan.template.structure or {}) do
     for _j, beat in ipairs(part.children or {}) do
@@ -195,8 +198,11 @@ M.apply = function(prj, name)
     end
   end
   vim.notify(
-    ("[storyteller] Template '%s' applied: %d chapters created, %d skipped")
-      :format(plan.template.id, created, skipped),
+    ("[storyteller] Template '%s' applied: %d chapters created, %d skipped"):format(
+      plan.template.id,
+      created,
+      skipped
+    ),
     vim.log.levels.INFO
   )
   return { created = created, skipped = skipped, template = plan.template }

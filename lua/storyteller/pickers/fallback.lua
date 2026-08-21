@@ -9,10 +9,15 @@ M.pick = function(kind, opts)
   -- Without a fancy picker, at least reveal the directory (oil-like) or a notify.
   if kind == "files" then
     local dir = opts.cwd or vim.fn.getcwd()
-    vim.notify(("Storyteller: open `%s` (install telescope/fzf-lua for a picker)"):format(dir), vim.log.levels.INFO)
-    vim.cmd("cd" .. "" .. vim.fn.fnameescape(dir))
+    vim.notify(
+      ("Storyteller: open `%s` (install telescope/fzf-lua for a picker)"):format(dir),
+      vim.log.levels.INFO
+    )
   elseif kind == "grep" then
-    vim.notify(("Storyteller: grep for `%s` (needs telescope/fzf-lua)"):format(opts.search or ""), vim.log.levels.WARN)
+    vim.notify(
+      ("Storyteller: grep for `%s` (needs telescope/fzf-lua)"):format(opts.search or ""),
+      vim.log.levels.WARN
+    )
   end
 end
 

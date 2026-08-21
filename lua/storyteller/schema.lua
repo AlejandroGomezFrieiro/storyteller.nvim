@@ -11,11 +11,13 @@ local M = {}
 
 -- Loaded from the bundled canonical schema.json at module-require time.
 -- The file is a committed copy of the storyteller standard repo's schema.
-local schema_path = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
-  .. "/schema.json"
+local schema_path = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h") .. "/schema.json"
 local ok, DEFAULTS = pcall(vim.json.decode, table.concat(vim.fn.readfile(schema_path), "\n"))
 if not ok or not DEFAULTS then
-  vim.notify("[storyteller] Failed to load bundled schema.json; schema vocabulary unavailable.", vim.log.levels.ERROR)
+  vim.notify(
+    "[storyteller] Failed to load bundled schema.json; schema vocabulary unavailable.",
+    vim.log.levels.ERROR
+  )
   DEFAULTS = {}
 end
 
@@ -81,7 +83,7 @@ local function toml_schema(text)
       local key, value = line:match("^%s*([%w_-]+)%s*=%s*(.+)$")
       if key and (section == nil or section == "storyteller") and key == "schema" then
         local v = value:gsub("%s+#.*$", ""):gsub("^%s*", ""):gsub("%s*$", "")
-        v = v:match('^"(.*)"$') or v:match("^'(.*)'$") or v
+        v = v:match("^\"(.*)\"$") or v:match("^'(.*)'$") or v
         return v
       end
     end

@@ -3,11 +3,51 @@
 A Scrivener/Kindling-class novel-writing engine for Neovim over Markdown.
 Log of implementation work against the plan in `PLAN.md`.
 
-> **Redesign (0.2.0).** The plugin was restructured around five pillars
-> (metadata, compilation, tracking, templating, UI). The phase-based module
-> layout was replaced by cohesive feature modules; the command surface moved to
-> a single `:Story` command with subcommands. Details are tracked below under
-> "Redesign".
+> **Rework (0.3.0).** The plugin split into two frontends over one grammar:
+> the Neovim plugin (editing) and `storyteller-tui` (a ratatui cockpit in
+> `tui/`). Structural views became *storyboards* — editable text projections
+> applied on write, oil.nvim-style. Contracts: `docs/interaction.md` and
+> `docs/projections.md`. Details below under "Rework".
+
+---
+
+## Rework (0.3.0)
+- [x] **TUI visuals lane** (`docs/tui-visual-plan.md` §16 1–4): `theme.rs`
+      with semantic slots, five presets, termprofile capability detection and
+      truecolor→16 degradation, glyph tiers; frame skeleton (rounded block,
+      tab strip, footer key strip); dashboard progress bars, corkboard status
+      glyphs + accent selection, timeline styling; `--theme/--background/
+      --glyphs` flags; responsive breakpoints (<50/50–79/≥80); TestBackend
+      matrix. `:Story tui` passes `--background` + `tui_theme`/`tui_glyphs`.
+- [x] **Storyboard styling**: `ui/board_hl.lua` paints the projection buffers
+      with extmarks (surface card bands, status colors, key/value splits,
+      table headers) — text stays canonical; repaints on edits and commits.
+      `StorytellerSurface`/`StorytellerSelection` palette slots added.
+- [x] `docs/interaction.md` — the frozen key grammar shared by both
+      frontends (keyboard-first, vim-like; mouse optional and TUI-only).
+- [x] `docs/projections.md` — projection formats (corkboard, timeline,
+      synopsis, metasheet), the op set (`reorder` / `set_field` /
+      `set_chapter_field`), round-trip rules, and the planned LSP binding.
+- [x] `lua/storyteller/projections/` — the projection engine: deterministic
+      render, structural diff (rejects deletions/additions rather than
+      guessing), and transactional apply with a pre-apply git snapshot.
+      Cross-file scene moves are expressed by editing a card's `file:` line.
+- [x] `ui/storyboard.lua` — projections as `acwrite` buffers: full vim
+      editing, `J`/`K` block moves, `a` status cycle, `<CR>` open, `:w`
+      applies atomically and re-renders.
+- [x] `:Story synopsis` / `:Story metasheet` — new storyboards.
+- [x] Collections land in the **quickfix list** instead of a custom view.
+- [x] Deleted the reactive canvas stack: vendored `morph/` (2.4k lines),
+      `ui/fibrous.lua`, `ui/react_{corkboard,timeline,graph}.lua`; the plain
+      buffer renderer now serves every read-only view.
+- [x] `:Story tui` — embeds `storyteller-tui` in a terminal buffer.
+- [x] `tui/` — ratatui crate: dashboard, corkboard/timeline mirrors, `o`
+      opens the focused scene in `$EDITOR +<line>`; optional mouse aliases;
+      unit-tested project parser (the future `storyteller-core` seam).
+- [x] Flake: `.#storyteller-tui` output; fibrous input removed.
+- [x] Regression suite extended (167 checks, headless): projection
+      render/determinism, field edits, cross-file reorder, round trip,
+      deletion rejection, timeline retiming, synopsis write-back, metasheet.
 
 ---
 

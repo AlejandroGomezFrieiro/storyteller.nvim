@@ -39,6 +39,16 @@
         cp -r ${./templates} $out/templates
       '';
 
+      # The ratatui cockpit (tui/): dashboard, corkboard and timeline mirrors,
+      # $EDITOR handoff. Depends only on the project's Markdown files.
+      storyteller-tui = pkgs.rustPlatform.buildRustPackage {
+        pname = "storyteller-tui";
+        inherit version;
+        src = ./tui;
+        cargoLock.lockFile = ./tui/Cargo.lock;
+        meta.mainProgram = "storyteller-tui";
+      };
+
       # Prose-aware language server, provided by the storyteller standard repo.
       storyteller-lsp = storyteller.packages.${system}.storyteller-lsp;
     });
@@ -77,6 +87,11 @@
           pkgs.vimPlugins.nui-nvim
           # The language server, from the storyteller standard repo.
           self.packages.${system}.storyteller-lsp
+          # The ratatui cockpit.
+          self.packages.${system}.storyteller-tui
+          # Lint/format for CI parity.
+          pkgs.stylua
+          pkgs.luajitPackages.luacheck
         ];
       };
 
@@ -85,6 +100,8 @@
         packages = [
           pkgs.vhs
           demoNvim
+          # The ratatui cockpit, for docs/vhs/19-tui.tape.
+          self.packages.${system}.storyteller-tui
           # Keep the LSP executable available when demo-init.lua is used
           # directly instead of the generated Nixvim configuration.
           self.packages.${system}.storyteller-lsp

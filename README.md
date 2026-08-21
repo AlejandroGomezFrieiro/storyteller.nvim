@@ -43,6 +43,15 @@ or inspire similar ones.
 
 - A project dashboard, outline, card-based corkboard, timeline, plot-thread
   planner, story-health review, workspace, and scene picker.
+- Keyboard restructuring: move scenes across the story with `J`/`K` on the
+  corkboard.
+- File-backed annotations in plain Markdown (`notes/annotations.md`), captured
+  from selections and linked back to their source.
+- Saved searches ("collections") over scenes: `status:draft tag:war`.
+- Distraction-free composition mode.
+- Compile presets that keep drafts out of exports; Fountain export and
+  best-effort Scrivener import.
+- Snapshot diffing: see exactly what changed since before a revision pass.
 - Scene metadata for status, point of view, location, beats, and targets.
 - Reference cards for characters, places, objects, organizations, and your own
   categories.
@@ -146,11 +155,14 @@ opens a searchable command list.
 | `:Story scenes` | Find and open a scene. |
 | `:Story next` / `prev` | Move between scenes. |
 | `:Story resume` | Return to the last scene you visited. |
-| `:Story corkboard` | Review scenes as cards. |
-| `:Story timeline` | Review scenes in story-time order. |
+| `:Story corkboard` | Review scenes as cards — an editable storyboard. |
+| `:Story timeline` | Review scenes in story-time order — an editable storyboard. |
+| `:Story synopsis` | Edit synopses in place (writes back to YAML). |
+| `:Story metasheet` | Bulk-edit scene metadata with visual block. |
 | `:Story threads` | Follow plot setups through their payoffs. |
 | `:Story health` | Find loose ends and scenes worth revisiting. |
 | `:Story workspace` | Toggle the binder and inspector. |
+| `:Story tui` | Open the `storyteller-tui` cockpit in a terminal buffer. |
 | `:Story meta` | Edit the current scene's metadata. |
 | `:Story status` | Set or cycle the current scene's status. |
 | `:Story references` | Browse reference cards. |
@@ -163,7 +175,22 @@ opens a searchable command list.
 | `:Story track` | Review writing progress. |
 | `:Story session start` / `end` | Record a writing session. |
 | `:Story snapshot` | Create a git safety snapshot. |
+| `:Story diff` | Diff the working tree against a snapshot. |
+| `:Story annotations` | Review `%%annotations%%`; they never reach exports. |
+| `:Story collections` | Saved searches over scenes (`status:draft tag:war`). |
+| `:Story compose` | Distraction-free composition mode. |
+| `:Story import <file.scrivx>` | Import a Scrivener project (best effort). |
+| `:Story fountain` | Export the manuscript as Fountain. |
 | `:Story template` | Apply a story structure without overwriting files. |
+
+On the corkboard, `J`/`K` move the scene card under the cursor through the
+story order — across chapters too. Storyboards are editable text projections:
+edit cards, rows, and synopses like any buffer and `:w` applies your changes
+atomically to the Markdown sources (a git snapshot is taken first). The
+shared key grammar lives in [docs/interaction.md](docs/interaction.md); the
+projection formats in [docs/projections.md](docs/projections.md). Compile
+presets live at `.storyteller/compile.json` (`include_statuses`,
+`pandoc_args`, `title`) so drafts can be excluded from exports.
 
 The default keymaps live under `<leader>s`; the complete list is in the
 [user guide](docs/user-guide.md).
@@ -172,13 +199,19 @@ The default keymaps live under `<leader>s`; the complete list is in the
 
 The optional `storyteller-lsp` companion understands Storyteller projects. It
 connects names in your prose to reference cards without requiring special link
-syntax:
+syntax — the prose itself is the link:
 
 - `K` shows a card summary.
 - `gd` opens the matching card.
 - `gr` finds mentions across the manuscript.
+- Resolved names are highlighted in place via semantic tokens (`mention`).
 - Completion suggests names and metadata values.
 - Code actions create cards and connect them to scenes.
+
+Outside a project the server still provides universal markdown features:
+hierarchical symbols, folding, selection ranges, document links, and semantic
+tokens for headings, emphasis, fences, comments, and tags. It negotiates
+incremental sync and multi-root workspaces.
 
 `storyteller-lsp` is the reference implementation of the
 [Storyteller standard](https://github.com/AlejandroGomezFrieiro/storyteller) —
@@ -197,14 +230,28 @@ Storyteller is three layers:
    plus the LSP protocol and CLI contract.
 2. **The reference implementation** — `storyteller-core` (a Rust library) and
    `storyteller-lsp` (the server and CLI), from the same repo.
-3. **This plugin** — `storyteller.nvim` is the reference *consumer*. It talks to
-   `storyteller-lsp` over LSP, with a native Lua fallback so the read-only views
-   (outline, corkboard) and LSP-less setups keep working.
+3. **The frontends** — `storyteller.nvim` is the reference *editing* consumer
+   (prose, projections-as-buffers, LSP integration), and `tui/` in this repo is
+   the reference *cockpit* (a ratatui app for dashboards, review, and
+   `$EDITOR` handoff). Both speak the grammar in
+   [docs/interaction.md](docs/interaction.md).
 
 The plugin bundles a copy of the standard's canonical `schema.json`
 (`lua/storyteller/schema.json`) so its metadata vocabulary never drifts from
 the standard; the conformance fixtures in the standard repo pin both
 implementations to the same behavior.
+
+## The TUI
+
+`storyteller-tui` (in [`tui/`](tui/)) is a keyboard-first ratatui companion:
+a dashboard with per-chapter progress bars, read-only corkboard and timeline
+mirrors, and `o` to open the focused scene in `$EDITOR` at its heading.
+Mouse scroll/click are optional aliases; structural editing happens in the
+editor's storyboards. Build it with the flake (`.#storyteller-tui`) or
+`cargo build` inside `tui/`. Theming: five presets (`dark`, `light`,
+`midnight`, `forest`, `contrast`) with automatic truecolor → 16-color
+degradation — see [`tui/README.md`](tui/README.md). `:Story tui` follows your
+editor's background; override with the `tui_theme`/`tui_glyphs` options.
 
 ## Configuration
 
@@ -213,7 +260,7 @@ The defaults are intentionally useful:
 ```lua
 require("storyteller").setup({
   picker = "auto",          -- "auto" | "telescope" | "fzf"
-  ui = "auto",              -- "auto" | "morph" | "nui" | "buffer"
+  tui_bin = "storyteller-tui", -- the cockpit binary for :Story tui
   detect_on_save = true,
   detect_debounce = 300,
   heatmap_weeks = 30,
@@ -229,6 +276,8 @@ the [schema reference](docs/schema.md).
 - [Language server guide](docs/language-server.md): prose navigation and
   completions.
 - [Schema reference](docs/schema.md): customize project metadata and checks.
+- [Roadmap](docs/roadmap.md): designed-but-unbuilt features (timeline editor,
+  relationship map, and more).
 - [VHS demos](docs/vhs/README.md): reproduce the screenshots and GIFs.
 - `:help storyteller`: Neovim help for commands and options.
 
@@ -268,9 +317,9 @@ have helped inspired what this plugin is, as well as the [storyteller](https://g
   model built around scenes and reference cards.
 - [obsidian-storyline](https://github.com/PixeroJan/obsidian-storyline) inspired
   arbitrary, user-defined reference categories.
-- [morph.nvim](https://github.com/jrop/morph.nvim) is vendored as the reactive
-  rendering library; [nui.nvim](https://github.com/MunifTanjim/nui.nvim) is an
-  optional window and layout dependency.
+- [oil.nvim](https://github.com/stevearc/oil.nvim) inspired the storyboard
+  model: views are editable text projections of project state, applied on
+  write.
 
 Storyteller stores its own data model in plain Markdown and YAML. It does not
 import, copy, or depend on those applications' proprietary project formats.

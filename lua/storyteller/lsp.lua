@@ -27,11 +27,15 @@ M.command = function(name, args, cb)
     return nil, "no storyteller client attached"
   end
   if name == "storyteller.compile" or name == "storyteller.manuscript" then
-    client:request("workspace/executeCommand", { command = name, arguments = args or {} }, function(err, result)
-      if cb then
-        cb(err and nil or result, err)
+    client:request(
+      "workspace/executeCommand",
+      { command = name, arguments = args or {} },
+      function(err, result)
+        if cb then
+          cb(err and nil or result, err)
+        end
       end
-    end)
+    )
     return true
   end
   local ok, res = pcall(client.request_sync, client, "workspace/executeCommand", {

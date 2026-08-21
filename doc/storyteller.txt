@@ -7,7 +7,9 @@ CONTENTS                                                         *storyteller*
   2. Requirements............|storyteller-requirements|
   3. Commands...............|storyteller-commands|
   4. Options................|storyteller-options|
-  5. Project model...........|storyteller-model|
+  4b. Compile presets.....|storyteller-compile-presets|
+  5. Annotations...........|storyteller-annotations|
+  6. Project model...........|storyteller-model|
 
 ==============================================================================
 1. INTRODUCTION                                       *storyteller-intro*
@@ -39,7 +41,6 @@ Core plugin: Neovim 0.9+, zero hard dependencies (pure Lua + nvim API).
 Optional (auto-detected):
   - telescope.nvim   (picker backend, default when present)
   - fzf-lua          (alternate picker backend)
-  - nui.nvim         (UI dependency; views fall back to plain buffers without it)
   - rg               (faster indexing; falls back to |glob()|)
   - pandoc           (export)
   - which-key.nvim   (keybinding hints)
@@ -53,8 +54,10 @@ A single `:Story` command with subcommand-style arguments and completion:
   :Story outline          chapter outline with word counts and targets
   :Story scenes           pick a scene
   :Story next|prev        move between scenes
-  :Story corkboard [q]    review scene cards (optionally filtered by text)
-  :Story timeline          review scenes in story-time order
+  :Story corkboard [q]    scene cards as an editable storyboard
+  :Story timeline         story-time order as an editable storyboard
+  :Story synopsis         synopsis outliner (editable)
+  :Story metasheet        bulk scene metadata editor (visual-block friendly)
   :Story threads           review setup/payoff plot threads
   :Story health            review loose ends and incomplete beats
   :Story resume           return to the last visited scene
@@ -75,8 +78,70 @@ A single `:Story` command with subcommand-style arguments and completion:
   :Story export [fmt]     export the manuscript (docx/epub/pdf/smf)
   :Story export all [fmt] export each chapter
   :Story snapshots        list git snapshots
+  :Story diff [id]        diff the working tree against a snapshot
+  :Story note [title]     capture an annotation from the selection; notes live
+                          in notes/annotations.md as plain Markdown sections
+  :Story annotations      review annotations (jump, resolve, delete)
+  :Story collections      saved searches over the scene index
+  :Story collect <query>  run a one-off scene query
+  :Story compose          distraction-free composition mode
+  :Story import <file>    import a Scrivener .scrivx project
+  :Story fountain         export the manuscript as Fountain
   :Story workspace        toggle the binder + inspector workspace
+  :Story tui              open the storyteller-tui cockpit in a terminal buffer
   :Story palette          command palette
+
+STORYBOARDS                                            *storyteller-storyboards*
+
+The corkboard, timeline, synopsis, and metadata sheet are editable text
+projections of the project (see docs/projections.md). You edit them like any
+buffer — dd/y/p move cards, / searches, visual-block sweeps the metasheet —
+and `:w` applies your edits to the chapter files atomically:
+
+  J/K           move the card/row under the cursor
+  a             cycle the scene status (staged until :w)
+  <CR>          open the scene under the cursor
+  R             re-render from disk (discards staged edits)
+  :w            apply staged changes (a git snapshot is taken first when the
+                project is a git repository)
+
+On the corkboard, each card carries a `file:` line: edit it (and/or move the
+card) to relocate a scene across chapters. All open views refresh
+automatically when you save a file.
+
+THE TUI                                                      *storyteller-tui*
+
+`storyteller-tui` is a keyboard-first ratatui companion app: dashboard,
+corkboard, and timeline mirrors with the same j/k grammar. `o` opens the
+focused scene in $EDITOR at its heading; mouse scroll/click are optional
+aliases. Build it from tui/ or use the flake's `.#storyteller-tui` output;
+`:Story tui` embeds it in a terminal buffer when it is on PATH.
+
+ANNOTATIONS                                            *storyteller-annotations*
+
+Notes are kept out of the prose and in their own document (default
+`notes/annotations.md`, configurable via |storyteller-options|). Each entry is
+a `## ` section with a `storyteller: note` YAML block recording status,
+source file, line, and capture date, followed by a blockquote of the passage
+and free-form Markdown commentary:
+
+    ## Slow the harbor reveal
+
+    ```yaml
+    storyteller: note
+    status: open
+    file: chapters/01_the_harbor.md
+    line: 24
+    created: 2026-08-21
+    ```
+
+    > Odysseus watched the harbor lights bend in the rain.
+
+    The warning arrives too neatly.
+
+Jumping back searches for the quoted text near the recorded line, so notes
+survive ordinary edits that shift line numbers. Legacy inline `%%comments%%`
+are still stripped on compile and listed in the review view.
 
 The default keymaps put these under `<leader>s` (see `:Story palette` and
 which-key's "Story" group).
@@ -90,14 +155,39 @@ Passed to `setup({...})`:
   templates_dir    Optional override dir for story-structure templates.
   autocmds         Boolean; enable FileType/BufWritePost autocmds.
   picker           "auto"|"telescope"|"fzf".
-  ui               "auto"|"morph"|"nui"|"buffer".
+  ui               "auto"|"morph"|"buffer".
   detect_on_save   Boolean; auto-run reference detection after save.
   detect_debounce  ms debounce for detection.
   heatmap_weeks    Weeks shown in the tracking dashboard heatmap.
-  rg               path to ripgrep (or nil).
-  pandoc           path to pandoc (or nil).
+  rg               path to ripgrep (probed lazily when nil).
+  pandoc           path to pandoc (probed lazily when nil).
+  notes_file       Path of the annotations document, relative to the project
+                   root (default "notes/annotations.md").
+
+Compile presets live at `.storyteller/compile.json`:
+
+    { "include_statuses": ["done", "revision"],
+      "pandoc_args": ["--toc"],
+      "title": "My Novel" }
+
+Annotations use `%%double percent%%` inline or a line starting with `%%`;
+they are stripped from every compiled or exported artifact.
 
 See `lua/storyteller/config.lua` for defaults.
+
+COMPILE PRESETS                                  *storyteller-compile-presets*
+
+`.storyteller/compile.json` controls compilation and export:
+
+    {
+      "include_statuses": ["done", "revision"],
+      "pandoc_args": ["--toc"],
+      "title": "My Novel"
+    }
+
+`include_statuses` compiles only scenes whose `status:` is listed;
+`pandoc_args` are appended to every export; `title` seeds the Fountain
+title page.
 
 ==============================================================================
 5. PROJECT MODEL                                       *storyteller-model*

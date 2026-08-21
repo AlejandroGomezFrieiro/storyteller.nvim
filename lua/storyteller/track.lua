@@ -68,7 +68,10 @@ function M.session_end()
   end
   M.progress_append()
   vim.notify(
-    ("[storyteller] Session ended · wrote %d words (since %s)."):format(stats.written, stats.started_at),
+    ("[storyteller] Session ended · wrote %d words (since %s)."):format(
+      stats.written,
+      stats.started_at
+    ),
     vim.log.levels.INFO
   )
   vim.g.storyteller_session = nil
@@ -115,7 +118,11 @@ function M.progress_append(prj)
   end
   vim.fn.writefile(out, logfile)
   vim.notify(
-    ("[storyteller] progress.log updated · %s → +%d words (total %d)."):format(today, delta, current),
+    ("[storyteller] progress.log updated · %s → +%d words (total %d)."):format(
+      today,
+      delta,
+      current
+    ),
     vim.log.levels.INFO
   )
   return { logfile = logfile, delta = delta, total = current }
@@ -215,56 +222,14 @@ function M.week_grid(prj, weeks)
     if first then
       local month_num = tonumber(first.date:sub(6, 7))
       if month_num ~= last_month then
-        months[w] = os.date("%b", os.time({
-          year = tonumber(first.date:sub(1, 4)),
-          month = month_num,
-          day = 1,
-        }))
-        last_month = month_num
-      end
-    end
-  end
-  return { grid = grid, months = months, weeks = weeks }
-end
-
--- GitHub-style grid: weeks as columns, Sun..Sat as rows. Newest day (today)
--- lands in the final column. `months[w]` labels the column where a new month
--- begins, like a contribution graph.
-function M.week_grid(prj, weeks)
-  prj = prj or project.current()
-  weeks = weeks or 30
-  local by_date = {}
-  for _, e in ipairs(M.log_entries(prj)) do
-    by_date[e.date] = e.delta or 0
-  end
-  local now = os.time()
-  local today_dow = tonumber(os.date("%w", now))
-  local grid = {}
-  local months = {}
-  local last_month = nil
-  for w = 1, weeks do
-    grid[w] = {}
-    local first = nil
-    for d = 0, 6 do
-      local offset = (weeks - w) * 7 + (today_dow - d)
-      if offset >= 0 then
-        local t = now - offset * 86400
-        local date = os.date("%Y-%m-%d", t)
-        local cell = { date = date, delta = by_date[date] or 0 }
-        grid[w][d] = cell
-        if not first then
-          first = cell
-        end
-      end
-    end
-    if first then
-      local month_num = tonumber(first.date:sub(6, 7))
-      if month_num ~= last_month then
-        months[w] = os.date("%b", os.time({
-          year = tonumber(first.date:sub(1, 4)),
-          month = month_num,
-          day = 1,
-        }))
+        months[w] = os.date(
+          "%b",
+          os.time({
+            year = tonumber(first.date:sub(1, 4)),
+            month = month_num,
+            day = 1,
+          })
+        )
         last_month = month_num
       end
     end
@@ -420,7 +385,10 @@ function M.report(prj)
   end
   out[#out + 1] = ""
   if sum_target > 0 then
-    out[#out + 1] = ("Manuscript target: %d · current %d words"):format(sum_target, M.total_words(prj))
+    out[#out + 1] = ("Manuscript target: %d · current %d words"):format(
+      sum_target,
+      M.total_words(prj)
+    )
   end
   local s = M.session_stats()
   if s then

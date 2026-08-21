@@ -299,7 +299,11 @@ function M.outline(prj)
             { text = string.format("%6d w  ", words), hl = "StorytellerMuted" },
             { text = bar(pct, 20), hl = "StorytellerBar" },
             {
-              text = string.format(" %3d%%%s", pct, target > 0 and string.format("  %s/%s", num(words), num(target)) or ""),
+              text = string.format(
+                " %3d%%%s",
+                pct,
+                target > 0 and string.format("  %s/%s", num(words), num(target)) or ""
+              ),
               hl = "StorytellerMuted",
             },
           },
@@ -313,6 +317,44 @@ function M.outline(prj)
       for i, ch in ipairs(chapters) do
         select[offset + 1 + i] = ch
       end
+      -- Per-scene panel: status, words vs target.
+      local scene_rows = {}
+      local scenes = index.scenes(prj)
+      for _, sc in ipairs(scenes) do
+        local m = sc.meta or {}
+        local status = m.status or "outline"
+        local target = tonumber(m.target)
+        local w = sc.words or 0
+        local pct = target and target > 0 and math.floor(w / target * 100) or nil
+        scene_rows[#scene_rows + 1] = {
+          segments = {
+            {
+              text = string.format("%-8s", status:upper()),
+              hl = ui.status_hl(status) or "StorytellerScene",
+            },
+            {
+              text = string.format("%-30s", (sc.title or "Untitled"):sub(1, 30)),
+              hl = "StorytellerScene",
+            },
+            { text = string.format("%5d w", w), hl = "StorytellerMuted" },
+            {
+              text = target and string.format("  %s %3d%%", bar(pct, 12), pct) or "",
+              hl = "StorytellerBar",
+            },
+          },
+        }
+      end
+      if #scene_rows > 0 then
+        lines[#lines + 1] = { text = "", hl = nil }
+        local sp = ui.grid_panels({ { title = "SCENES", rows = scene_rows } })
+        offset = #lines
+        for _, l in ipairs(sp) do
+          lines[#lines + 1] = l
+        end
+        for i, sc in ipairs(scenes) do
+          select[offset + 1 + i] = sc
+        end
+      end
       lines[#lines + 1] = { text = "", hl = nil }
       lines[#lines + 1] = footer("<CR> open   a status   R refresh   q close")
       return { lines = lines, select = select }
@@ -320,13 +362,15 @@ function M.outline(prj)
     on_select = function(ch)
       edit(ch.path)
     end,
-    keys = { a = function()
-      local sel = vim.b[vim.api.nvim_get_current_buf()].storyteller_select
-      local data = at_cursor(sel)
-      if data then
-        cycle_status(data)
-      end
-    end },
+    keys = {
+      a = function()
+        local sel = vim.b[vim.api.nvim_get_current_buf()].storyteller_select
+        local data = at_cursor(sel)
+        if data then
+          cycle_status(data)
+        end
+      end,
+    },
   })
 end
 
@@ -371,210 +415,7 @@ function M.next(delta, prj)
   end
 end
 
--- --- Corkboard --------------------------------------------------------------
-
-local CARD_WIDTH = 34
-local CARD_OUTER_WIDTH = CARD_WIDTH + 4
-
--- Truncate to `width` characters and right-pad with spaces so that every card
--- row lines up regardless of multibyte glyphs.
-local function fit(text, width)
-  text = tostring(text or "")
-  local cl = vim.fn.strchars(text)
-  if cl > width then
-    return vim.fn.strcharpart(text, 0, width - 1) .. "…"
-  end
-  return text .. string.rep(" ", width - cl)
-end
-
-local function card_row(text, hl)
-  return {
-    segments = {
-      { text = "│ ", hl = "StorytellerCardBorder" },
-      { text = fit(text, CARD_WIDTH), hl = hl or "StorytellerScene" },
-      { text = " │", hl = "StorytellerCardBorder" },
-    },
-  }
-end
-
-local function scene_card(scene, number)
-  local info = meta.scene(scene)
-  local m = info.meta
-  local status = m.status or "outline"
-  local status_hl = ui.status_hl(status) or "StorytellerScene"
-  local ch_title = scene.chapter
-    and (scene.chapter.title or vim.fn.fnamemodify(scene.path, ":t:r"))
-    or "?"
-  local label = string.format("SCENE %02d", number or 0)
-  local top_prefix = "╭─ " .. label .. " "
-  local lines = {}
-  lines[#lines + 1] = {
-    text = top_prefix
-      .. string.rep("─", CARD_OUTER_WIDTH - vim.fn.strdisplaywidth(top_prefix) - 1)
-      .. "╮",
-    hl = "StorytellerCardBorder",
-  }
-  lines[#lines + 1] = card_row(scene.title or "Untitled", "StorytellerCardTitle")
-  lines[#lines + 1] = card_row(
-    string.format("%s · %s", ch_title, status:upper()),
-    status_hl
-  )
-  lines[#lines + 1] = card_row(
-    string.format("%s · %s", m.pov or "—", m.location or "—"),
-    "StorytellerCardMeta"
-  )
-  lines[#lines + 1] = card_row(m.beat or m.goal or "No beat recorded.")
-  lines[#lines + 1] = card_row(
-    string.format("%d words%s", scene.words or 0, m.target and (" · target " .. tostring(m.target)) or ""),
-    "StorytellerMetric"
-  )
-  lines[#lines + 1] = {
-    text = "╰" .. string.rep("─", CARD_WIDTH + 2) .. "╯",
-    hl = "StorytellerCardBorder",
-  }
-  return lines
-end
-
-function M.corkboard(prj, filter)
-  prj = prj or project.current()
-  ui.view({
-    name = "corkboard",
-    prj = prj,
-    build = function()
-      local lf = filter and filter:lower() or ""
-      local scenes = {}
-      for _, sc in ipairs(index.scenes(prj)) do
-        local info = meta.scene(sc)
-        local m = info.meta
-        local label = string.format("%s %s %s %s",
-          sc.title or "",
-          m.pov or "",
-          m.location or "",
-          sc.chapter and (sc.chapter.title or "") or "")
-        if lf == "" or label:lower():find(lf, 1, true) then
-          scenes[#scenes + 1] = sc
-        end
-      end
-      -- Keep the board compact: unlike tracking, its content is the cards.
-      local lines = {
-        { text = "  ✦  CORKBOARD", hl = "StorytellerTitle" },
-        {
-          segments = {
-            { text = "  " .. vim.fn.fnamemodify(prj.root, ":t"), hl = "StorytellerAccent" },
-            { text = "  ·  the shape of the story", hl = "StorytellerMuted" },
-          },
-        },
-        { text = "  " .. #scenes .. " scene cards", hl = "StorytellerMuted" },
-      }
-      local select = {}
-      local two_col = vim.o.columns >= CARD_OUTER_WIDTH * 2 + 1
-      local columns = two_col and { {}, {} } or { {} }
-      local column_scenes = two_col and { {}, {} } or { {} }
-      for i, sc in ipairs(scenes) do
-        local c = two_col and ((i - 1) % 2) + 1 or 1
-        for _, line in ipairs(scene_card(sc, i)) do
-          columns[c][#columns[c] + 1] = line
-          column_scenes[c][#column_scenes[c] + 1] = sc
-        end
-        columns[c][#columns[c] + 1] = { text = "" }
-        -- `false` preserves the row in the Lua array. A nil value would be
-        -- discarded by the length operator and shift later card mappings.
-        column_scenes[c][#column_scenes[c] + 1] = false
-      end
-      local merged, bounds = ui.compose_columns(columns, 1)
-      local offset = #lines
-      for _, line in ipairs(merged) do
-        lines[#lines + 1] = line
-      end
-      for r = 1, #merged do
-        select[offset + r] = function(col)
-          if two_col then
-            if col + 1 < bounds[2].start then
-              return column_scenes[1][r]
-            end
-            return column_scenes[2][r]
-          end
-          return column_scenes[1][r]
-        end
-      end
-      lines[#lines + 1] = { text = "", hl = nil }
-      lines[#lines + 1] = footer("<CR> open   a status   u unused   R refresh   q close")
-      return { lines = lines, select = select }
-    end,
-    on_select = function(data)
-      local sc = type(data) == "function" and at_cursor(vim.b[vim.api.nvim_get_current_buf()].storyteller_select) or data
-      if sc then
-        index.open_scene(sc)
-      end
-    end,
-    keys = {
-      a = function()
-        local sel = vim.b[vim.api.nvim_get_current_buf()].storyteller_select
-        local sc = at_cursor(sel)
-        if sc then
-          cycle_status(sc)
-        end
-      end,
-      u = function()
-        local sel = vim.b[vim.api.nvim_get_current_buf()].storyteller_select
-        local sc = at_cursor(sel)
-        if sc then
-          meta.scene_write(sc, { status = "unused" })
-          local fn = vim.b[vim.api.nvim_get_current_buf()].storyteller_refresh
-          if fn then
-            fn()
-          end
-        end
-      end,
-    },
-  })
-end
-
--- --- Timeline ---------------------------------------------------------------
-
-function M.timeline(prj)
-  prj = prj or project.current()
-  ui.view({
-    name = "timeline",
-    prj = prj,
-    build = function()
-      local lines = {}
-      local select = {}
-      for _, l in ipairs(M.header(prj, "TIMELINE", "story time")) do
-        lines[#lines + 1] = l
-      end
-      local scenes = index.timeline(prj)
-      local rows = {}
-      for _, scene in ipairs(scenes) do
-        local value = scene.timeline_value and tostring(scene.timeline_value) or "unplaced"
-        local regression = scene.timeline_regression
-        local segs = {}
-        segs[#segs + 1] = { text = (regression and "! " or "◆ "), hl = regression and "StorytellerRevision" or "StorytellerAccent" }
-        segs[#segs + 1] = { text = string.format("%-10s", value), hl = "StorytellerTableHeader" }
-        segs[#segs + 1] = { text = string.format("%-28s", scene.title or "Untitled"), hl = regression and "StorytellerRevision" or "StorytellerScene" }
-        segs[#segs + 1] = { text = string.format("%-14s", scene.meta and (scene.meta.pov or "") or ""), hl = "StorytellerCardMeta" }
-        if regression then
-          segs[#segs + 1] = { text = "moves backward", hl = "StorytellerRevision" }
-        end
-        rows[#rows + 1] = { segments = segs }
-      end
-      local panel = ui.grid_panels({ { title = "STORY ORDER", rows = rows } })
-      local offset = #lines
-      for _, l in ipairs(panel) do
-        lines[#lines + 1] = l
-      end
-      for i, scene in ipairs(scenes) do
-        select[offset + 1 + i] = scene
-      end
-      lines[#lines + 1] = { text = "", hl = nil }
-      lines[#lines + 1] = footer("numeric days are ordered · free-form time keeps manuscript order · <CR> open   R refresh   q close")
-      return { lines = lines, select = select }
-    end,
-    on_select = function(scene)
-      index.open_scene(scene)
-    end,
-  })
-end
+-- The corkboard and timeline are editable projections now (ui/storyboard.lua).
 
 -- --- Plot threads -----------------------------------------------------------
 
@@ -597,9 +438,15 @@ function M.threads(prj)
         local done = thread.state == "complete"
         rows[#rows + 1] = {
           segments = {
-            { text = (done and "✓ " or "○ "), hl = done and "StorytellerDone" or "StorytellerRevision" },
+            {
+              text = (done and "✓ " or "○ "),
+              hl = done and "StorytellerDone" or "StorytellerRevision",
+            },
             { text = string.format("%-24s", thread.key), hl = "StorytellerScene" },
-            { text = string.format("%-14s", thread.state), hl = done and "StorytellerDone" or "StorytellerRevision" },
+            {
+              text = string.format("%-14s", thread.state),
+              hl = done and "StorytellerDone" or "StorytellerRevision",
+            },
             { text = first and (first.title or "scene") or "—", hl = "StorytellerCardMeta" },
           },
         }
@@ -653,7 +500,11 @@ function M.health(prj)
             segments = {
               { text = "○ ", hl = "StorytellerRevision" },
               { text = string.format("%-24s", finding.label), hl = "StorytellerRevision" },
-              { text = scene and (scene.title or "scene") or (finding.thread and finding.thread.key or ""), hl = "StorytellerCardMeta" },
+              {
+                text = scene and (scene.title or "scene")
+                  or (finding.thread and finding.thread.key or ""),
+                hl = "StorytellerCardMeta",
+              },
             },
           }
           row_scenes[#row_scenes + 1] = scene
@@ -670,7 +521,8 @@ function M.health(prj)
         end
       end
       lines[#lines + 1] = { text = "", hl = nil }
-      lines[#lines + 1] = footer("gentle prompts, not blockers · <CR> inspect   R refresh   q close")
+      lines[#lines + 1] =
+        footer("gentle prompts, not blockers · <CR> inspect   R refresh   q close")
       return { lines = lines, select = select }
     end,
     on_select = function(scene)
@@ -716,7 +568,11 @@ function M.track(prj)
             { text = string.format("%6d w  ", words), hl = "StorytellerMuted" },
             { text = bar(pct, 20), hl = "StorytellerBar" },
             {
-              text = string.format(" %3d%%%s", pct, target > 0 and string.format("  %s/%s", num(words), num(target)) or ""),
+              text = string.format(
+                " %3d%%%s",
+                pct,
+                target > 0 and string.format("  %s/%s", num(words), num(target)) or ""
+              ),
               hl = "StorytellerMuted",
             },
           },
@@ -730,7 +586,10 @@ function M.track(prj)
             { text = string.rep(" ", 24), hl = nil },
             { text = string.format("%6s  ", "manuscript"), hl = "StorytellerTableHeader" },
             { text = bar(pct, 20), hl = "StorytellerBar" },
-            { text = string.format(" %3d%%  %s/%s", pct, num(total), num(sum)), hl = "StorytellerMetric" },
+            {
+              text = string.format(" %3d%%  %s/%s", pct, num(total), num(sum)),
+              hl = "StorytellerMetric",
+            },
           },
         }
       end
@@ -749,7 +608,10 @@ function M.track(prj)
         lines[#lines + 1] = {
           segments = {
             { text = "  ◷ ", hl = "StorytellerMetric" },
-            { text = string.format("session +%d words since %s", s.written, s.started_at), hl = "StorytellerMetric" },
+            {
+              text = string.format("session +%d words since %s", s.written, s.started_at),
+              hl = "StorytellerMetric",
+            },
           },
         }
         lines[#lines + 1] = { text = "", hl = nil }
@@ -877,7 +739,8 @@ function M.inspector(prj)
       local info = meta.scene(scene)
       local m = info.meta
       local lines = {}
-      lines[#lines + 1] = { text = "  ✦  " .. (scene.title or "SCENE"):upper(), hl = "StorytellerTitle" }
+      lines[#lines + 1] =
+        { text = "  ✦  " .. (scene.title or "SCENE"):upper(), hl = "StorytellerTitle" }
       lines[#lines + 1] = { text = "", hl = nil }
       local status_hl = ui.status_hl(m.status or "outline") or "StorytellerScene"
       local context = ui.grid_panels({
@@ -975,15 +838,22 @@ function M.template_preview(prj, name)
     prj = prj,
     build = function()
       local lines = {}
-      lines[#lines + 1] = { text = "  ✦  TEMPLATE  " .. (plan.template.name or plan.template.id), hl = "StorytellerTitle" }
-      lines[#lines + 1] = { text = "  " .. #plan.created .. " chapter(s) to create · " .. #plan.skipped .. " skipped", hl = "StorytellerMetric" }
+      lines[#lines + 1] = {
+        text = "  ✦  TEMPLATE  " .. (plan.template.name or plan.template.id),
+        hl = "StorytellerTitle",
+      }
+      lines[#lines + 1] = {
+        text = "  " .. #plan.created .. " chapter(s) to create · " .. #plan.skipped .. " skipped",
+        hl = "StorytellerMetric",
+      }
       lines[#lines + 1] = { text = "", hl = nil }
       local rows = {}
       for _, p in ipairs(plan.created) do
         rows[#rows + 1] = { text = "+ " .. vim.fn.fnamemodify(p, ":t"), hl = "StorytellerDone" }
       end
       for _, p in ipairs(plan.skipped) do
-        rows[#rows + 1] = { text = "= " .. vim.fn.fnamemodify(p, ":t") .. "  (exists)", hl = "StorytellerMuted" }
+        rows[#rows + 1] =
+          { text = "= " .. vim.fn.fnamemodify(p, ":t") .. "  (exists)", hl = "StorytellerMuted" }
       end
       for _, l in ipairs(ui.grid_panels({ { title = "PREVIEW", rows = rows } })) do
         lines[#lines + 1] = l
@@ -996,6 +866,340 @@ function M.template_preview(prj, name)
       a = function()
         templates.apply(prj, name)
         vim.cmd("close")
+      end,
+    },
+  })
+end
+
+-- --- Annotations review -----------------------------------------------------
+
+-- File-backed notes (`notes/annotations.md`) plus any legacy %%inline%%
+-- annotations still living in prose. <CR> jumps to the source; r resolves;
+-- d deletes; e opens the notes document for free-form editing.
+function M.annotations(prj)
+  prj = prj or project.current()
+  local compile = require("storyteller.compile")
+  local notes = require("storyteller.notes")
+  ui.view({
+    name = "annotations",
+    prj = prj,
+    build = function()
+      local entries = notes.list(prj)
+      local legacy = compile.annotations(prj)
+      local lines = {
+        { text = "  ✦  ANNOTATIONS", hl = "StorytellerTitle" },
+        {
+          segments = {
+            { text = ("  %d note(s)"):format(#entries), hl = "StorytellerMetric" },
+            { text = " in notes/annotations.md", hl = "StorytellerMuted" },
+          },
+        },
+      }
+      if #legacy > 0 then
+        lines[#lines + 1] = {
+          segments = {
+            { text = ("  %d legacy %%inline%%"):format(#legacy), hl = "StorytellerMuted" },
+            { text = " — consider converting with :Story note", hl = "StorytellerMuted" },
+          },
+        }
+      end
+      lines[#lines + 1] = { text = "" }
+
+      local sel = {}
+      for _, n in ipairs(entries) do
+        local glyph = n.status == "resolved" and "✓" or "◆"
+        local glyph_hl = n.status == "resolved" and "StorytellerDone" or "StorytellerKey"
+        lines[#lines + 1] = {
+          segments = {
+            { text = "  " .. glyph .. " ", hl = glyph_hl },
+            {
+              text = n.title,
+              hl = n.status == "resolved" and "StorytellerMuted" or "StorytellerScene",
+            },
+          },
+        }
+        sel[#lines] = n
+        if n.file then
+          lines[#lines + 1] = {
+            segments = {
+              { text = "      ", hl = nil },
+              { text = vim.fn.fnamemodify(n.file, ":t"), hl = "StorytellerAccent" },
+              { text = n.line and (":" .. n.line) or "", hl = "StorytellerAccent" },
+              { text = n.created and ("  ·  " .. n.created) or "", hl = "StorytellerMuted" },
+            },
+          }
+        end
+        if n.quote then
+          lines[#lines + 1] = {
+            segments = {
+              { text = "      ", hl = nil },
+              { text = "“" .. n.quote .. "”", hl = "StorytellerCardMeta" },
+            },
+          }
+        end
+      end
+
+      if #legacy > 0 then
+        lines[#lines + 1] = { text = "" }
+        lines[#lines + 1] = { text = "  Legacy inline annotations", hl = "StorytellerSection" }
+        for _, a in ipairs(legacy) do
+          lines[#lines + 1] = {
+            segments = {
+              { text = "    % ", hl = "StorytellerMuted" },
+              {
+                text = string.format("%s:%d ", vim.fn.fnamemodify(a.path, ":t"), a.line),
+                hl = "StorytellerAccent",
+              },
+              { text = a.text, hl = "StorytellerCardMeta" },
+            },
+          }
+          sel[#lines] = { legacy = true, path = a.path, line = a.line }
+        end
+      end
+
+      if #entries == 0 and #legacy == 0 then
+        lines[#lines + 1] = {
+          text = "  Nothing yet. Select prose and press <leader>sN to capture a note.",
+          hl = "StorytellerMuted",
+        }
+      end
+
+      lines[#lines + 1] = { text = "" }
+      lines[#lines + 1] =
+        footer("<CR> jump   r resolve   d delete   e edit notes   R refresh   q close")
+      return { lines = lines, select = sel }
+    end,
+    on_select = function(data)
+      if data.legacy then
+        edit(data.path)
+        vim.api.nvim_win_set_cursor(0, { data.line, 0 })
+        vim.cmd("normal! zz")
+      else
+        notes.jump(data)
+      end
+    end,
+    keys = {
+      r = function()
+        local sel = vim.b[vim.api.nvim_get_current_buf()].storyteller_select
+        local data = at_cursor(sel)
+        if data and not data.legacy then
+          notes.toggle_status(prj, data)
+          local fn = vim.b[vim.api.nvim_get_current_buf()].storyteller_refresh
+          if fn then
+            fn()
+          end
+        end
+      end,
+      d = function()
+        local sel = vim.b[vim.api.nvim_get_current_buf()].storyteller_select
+        local data = at_cursor(sel)
+        if data and not data.legacy then
+          if vim.fn.confirm("Delete this note?", "&Delete\n&Cancel", 2) == 1 then
+            notes.delete(prj, data)
+            local fn = vim.b[vim.api.nvim_get_current_buf()].storyteller_refresh
+            if fn then
+              fn()
+            end
+          end
+        end
+      end,
+      e = function()
+        edit(notes.notes_file(prj))
+      end,
+    },
+  })
+end
+
+-- --- Collections (saved searches) -------------------------------------------
+
+function M.collection_run(prj, collection)
+  prj = prj or project.current()
+  local collections = require("storyteller.collections")
+  local matched = collections.run(prj, collection.query)
+  if #matched == 0 then
+    vim.notify("[storyteller] No scenes match: " .. collection.query, vim.log.levels.INFO)
+    return
+  end
+  -- Collections land in the quickfix list: the native way to walk a set of
+  -- buffer locations (docs/interaction.md — no custom UI for results).
+  local qf = {}
+  for _, sc in ipairs(matched) do
+    qf[#qf + 1] = {
+      filename = sc.path,
+      lnum = sc.start_line or 1,
+      col = 1,
+      text = string.format(
+        "%s · %s · %s words",
+        sc.title or "Untitled",
+        sc.meta and (sc.meta.status or "outline") or "outline",
+        sc.words or 0
+      ),
+    }
+  end
+  vim.fn.setqflist(qf, "r")
+  vim.fn.setqflist({}, "a", { title = "storyteller: " .. collection.name })
+  vim.cmd("copen")
+end
+
+function M.collections(prj)
+  prj = prj or project.current()
+  local collections = require("storyteller.collections")
+  ui.view({
+    name = "collections",
+    prj = prj,
+    build = function()
+      local all = collections.list(prj)
+      local lines = {
+        { text = "  ✦  COLLECTIONS", hl = "StorytellerTitle" },
+        { text = "  saved searches over the scene index", hl = "StorytellerMuted" },
+        { text = "" },
+      }
+      local sel = {}
+      for _, c in ipairs(all) do
+        lines[#lines + 1] = {
+          segments = {
+            { text = "  ◆ ", hl = "StorytellerKey" },
+            { text = string.format("%-20s", c.name), hl = "StorytellerScene" },
+            { text = c.query, hl = "StorytellerMuted" },
+          },
+        }
+        sel[#lines] = c
+      end
+      if #all == 0 then
+        lines[#lines + 1] =
+          { text = "  None yet — press n to save one.", hl = "StorytellerMuted" }
+      end
+      lines[#lines + 1] = { text = "" }
+      lines[#lines + 1] = footer("<CR> run   n new   d delete   q close")
+      return { lines = lines, select = sel }
+    end,
+    on_select = function(c)
+      M.collection_run(prj, c)
+    end,
+    keys = {
+      n = function()
+        local name = vim.fn.input("Collection name: ")
+        if name == "" then
+          return
+        end
+        local query = vim.fn.input("Query (e.g. status:draft tag:war): ")
+        if query == "" then
+          return
+        end
+        require("storyteller.collections").save(prj, name, query)
+        local fn = vim.b[vim.api.nvim_get_current_buf()].storyteller_refresh
+        if fn then
+          fn()
+        end
+      end,
+      d = function()
+        local sel = vim.b[vim.api.nvim_get_current_buf()].storyteller_select
+        local c = at_cursor(sel)
+        if c and c.name then
+          require("storyteller.collections").delete(prj, c.name)
+          local fn = vim.b[vim.api.nvim_get_current_buf()].storyteller_refresh
+          if fn then
+            fn()
+          end
+        end
+      end,
+    },
+  })
+end
+
+-- --- Relationship map (classic fallback) -------------------------------------
+
+-- The same grid the reactive graph renders, through the plain view renderer.
+-- j/k cycles focus; <CR> opens the focused card.
+function M.relations(prj)
+  prj = prj or project.current()
+  local relations = require("storyteller.relations")
+  local focus_idx = 1
+  ui.view({
+    name = "relations",
+    prj = prj,
+    build = function()
+      local graph = relations.build(prj)
+      local names = {}
+      for _, n in ipairs(graph.nodes) do
+        names[#names + 1] = n.name
+      end
+      table.sort(names)
+      focus_idx = ((focus_idx - 1) % math.max(1, #names)) + 1
+      local focus = names[focus_idx]
+
+      local lines = {
+        {
+          text = "  ✦  RELATIONS · " .. #graph.nodes .. " nodes · " .. #graph.edges .. " edges",
+          hl = "StorytellerTitle",
+        },
+        { text = "" },
+      }
+      local rendered = relations.render_grid(graph, {
+        width = math.max(40, vim.api.nvim_win_get_width(0) - 6),
+        height = 18,
+        focus = focus,
+      })
+      for _, line in ipairs(rendered.lines) do
+        lines[#lines + 1] = line
+      end
+      lines[#lines + 1] = { text = "" }
+      if focus then
+        lines[#lines + 1] = {
+          segments = {
+            { text = "  ◆ ", hl = "StorytellerKey" },
+            { text = focus, hl = "StorytellerScene" },
+          },
+        }
+        for _, e in ipairs(graph.edges) do
+          if e.from == focus or e.to == focus then
+            local other = e.from == focus and e.to or e.from
+            local arrow = e.from == focus and "→" or "←"
+            lines[#lines + 1] = {
+              segments = {
+                {
+                  text = ("     %s %s %s"):format(arrow, e.kind, other),
+                  hl = "StorytellerCardMeta",
+                },
+              },
+            }
+          end
+        end
+      end
+      lines[#lines + 1] = { text = "" }
+      lines[#lines + 1] = footer("j/k focus   <CR> open card   R refresh   q close")
+      return { lines = lines, select = {} }
+    end,
+    keys = {
+      j = function()
+        focus_idx = focus_idx + 1
+        local fn = vim.b[vim.api.nvim_get_current_buf()].storyteller_refresh
+        if fn then
+          fn()
+        end
+      end,
+      k = function()
+        focus_idx = math.max(1, focus_idx - 1)
+        local fn = vim.b[vim.api.nvim_get_current_buf()].storyteller_refresh
+        if fn then
+          fn()
+        end
+      end,
+      ["<CR>"] = function()
+        local relations = require("storyteller.relations")
+        local graph = relations.build(prj)
+        local names = {}
+        for _, n in ipairs(graph.nodes) do
+          names[#names + 1] = n.name
+        end
+        table.sort(names)
+        local name = names[focus_idx]
+        for _, card in ipairs(require("storyteller.index").all_references(prj)) do
+          if card.name == name then
+            edit(card.path)
+            return
+          end
+        end
       end,
     },
   })

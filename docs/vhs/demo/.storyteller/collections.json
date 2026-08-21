@@ -1,0 +1,5 @@
+[
+  { "name": "Drafts", "query": "status:draft" },
+  { "name": "Act 1", "query": "tag:act1" },
+  { "name": "Odysseus scenes", "query": "pov:Odysseus" }
+]

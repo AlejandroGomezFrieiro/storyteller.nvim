@@ -24,7 +24,15 @@ Sleep 3s
 Show
 Type ":Story timeline"
 Enter
-Sleep 6s
+Sleep 4s
+# The timeline is a table projection: J shifts the row's day cell (+1).
+Type "3j"
+Sleep 500ms
+Type "J"
+Sleep 2500ms
+# Re-render from disk to discard the staged edit.
+Type "R"
+Sleep 1500ms
 Hide
 Type ":qa!"
 Enter

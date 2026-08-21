@@ -97,26 +97,57 @@ The dashboard is the main doorway: `:Story` or `<leader>s`.
 - `:Story scenes` lets you search every scene.
 - `:Story next` and `:Story prev` move through the manuscript.
 - `:Story outline` shows chapters, word counts, and target progress.
-- `:Story corkboard` turns scenes into temporary, movable-feeling cards for
-  review.
+- `:Story corkboard` turns scenes into cards you can edit in place.
 - `:Story timeline` lays scenes out by numeric story day/time when available.
+- `:Story synopsis` is an editable synopsis outliner.
+- `:Story metasheet` bulk-edits scene metadata (visual block shines here).
 - `:Story threads` follows setup fields to their matching payoffs.
 - `:Story health` gathers gentle prompts for scenes and threads worth revisiting.
 - `:Story workspace` surrounds the current buffer with a chapter/scene binder
   and a scene inspector.
+- `:Story annotations` reviews notes captured from your prose.
+- `:Story collections` runs saved searches over scenes.
 
 ![Dashboard](assets/01-dashboard.gif)
 
+## Storyboards
+
+The corkboard, timeline, synopsis, and metadata sheet are **storyboards**:
+editable text projections of your project (see `docs/projections.md`). You
+edit them like any buffer — `dd`/`p` move cards, `/` searches, visual block
+sweeps the metasheet — and `:w` applies your edits to the Markdown sources
+atomically. A git snapshot is taken first when the project is a repository,
+so `:Story diff` is always your undo.
+
 The corkboard is a view of your files, not a second copy of them. Press `<CR>`
-to open a scene, `a` to cycle its status, `u` to mark it unused, `R` to rebuild
-the board, and `q` to close it.
+to open a scene, `a` to cycle its status (staged until `:w`), `R` to re-render
+from disk, and `q` to close.
 
 ![Corkboard](assets/02-corkboard.gif)
 
-Each corkboard card keeps the useful context nearby: chapter, status, POV,
-location, beat, and word count. Cards are virtual entries in one Storyteller
-buffer, so `<CR>` opens the scene under the cursor without creating a second
-copy of the project.
+Each corkboard card keeps the useful context nearby: file, status, POV,
+location, beat, and word count. A card's `file:` line is its address — edit
+it (and/or move the card) to relocate a scene across chapter files.
+
+### Restructure With J And K
+
+The corkboard is also where you restructure. Put the cursor anywhere on a card
+and press `J` to move that scene later in the story or `K` to move it earlier.
+The edit is staged in the buffer; on `:w` Storyteller rewrites the underlying
+Markdown — heading, metadata block, and prose travel together — and re-renders
+the board.
+
+- Moving within a chapter swaps the two scene blocks.
+- Moving across a chapter boundary relocates the whole scene into the
+  neighboring chapter at the right position.
+- Applying is atomic: if any touched buffer has unsaved edits, the apply is
+  refused and the buffer is made read-only instead of being clobbered.
+
+This is the Scrivener drag-and-drop loop — see the board, feel the order,
+adjust it — without leaving the keyboard, and with the full editor (macros,
+`:g`, visual block) available on the board itself.
+
+![Moving cards](assets/14-corkboard-move.gif)
 
 ## Follow The Story
 
@@ -124,8 +155,8 @@ copy of the project.
 
 `:Story timeline` is a chronology view for scenes that use `day:` or numeric
 `time:` metadata. Numeric values are ordered; free-form values such as `after
-the storm` remain in manuscript order rather than being guessed. A warning
-marker highlights a numeric timeline regression.
+the storm` remain in manuscript order rather than being guessed. Edit the day
+cell (or press `J`/`K` to shift ±1 day) and `:w` retimes the scene.
 
 ![Story timeline](assets/08-timeline.gif)
 
@@ -193,11 +224,121 @@ When you want a clean reading or export copy:
 Generated files go in `build/`; source chapters are not modified by export.
 PDF export requires a LaTeX engine in addition to Pandoc.
 
+### Compile Presets
+
+A preset controls what gets compiled and how Pandoc is invoked. Create
+`.storyteller/compile.json`:
+
+```json
+{
+  "include_statuses": ["done", "revision"],
+  "pandoc_args": ["--toc", "--top-level-division=chapter"],
+  "title": "The Harbor"
+}
+```
+
+- `include_statuses` compiles only scenes whose `status:` is listed — your
+  draft stays messy while the build stays clean.
+- `pandoc_args` are appended to every `:Story export` invocation.
+- `title` seeds the Fountain title page.
+
+### Other Formats And Migrations
+
+- `:Story fountain` writes `build/manuscript.fountain`: chapters become
+  section headings, scenes become forced Fountain sluglines, and metadata is
+  stripped — a starting point for screenwriting tools.
+- `:Story import /path/to/project.scrivx` imports a Scrivener project
+  (best effort): binder documents become chapter files with scene headings,
+  and RTF formatting is reduced to plain prose. Review the result before
+  continuing work in it.
+
+## Focus: Composition Mode
+
+When it is time to write rather than manage, `<leader>sz` (`:Story compose`)
+dims the screen and centers the current buffer in a narrow column with
+wrapping, line breaking, and spelling enabled. Editing works exactly as
+before; `<Esc>` or `:Story compose` again restores your layout.
+
+![Composition mode](assets/13-compose.gif)
+
 ## Capture Ideas
 
 `:Story idea` adds a dated bullet to `research/ideas.md`, and `:Story ideas`
 opens that inbox. Ideas stay separate from chapter prose and do not affect word
 counts.
+
+## Leave Notes, Not Clutter
+
+Revision thoughts should not live inside the prose you will later export.
+Storyteller keeps annotations in their own Markdown document — by default
+`notes/annotations.md` — and links each one back to the line it came from.
+
+To capture one, select the passage (or just leave the cursor on its line) and
+press `<leader>sN`, or run `:Story note Sharpen this beat`. Storyteller appends
+a section like this:
+
+```markdown
+## Sharpen this beat
+
+```yaml
+storyteller: note
+status: open
+file: chapters/01_the_harbor.md
+line: 24
+created: 2026-08-21
+```
+
+> At noon the coast vanished behind a wall of weather.
+
+Something should be lost here so the crossing feels paid for.
+```
+
+The quoted text is how a note finds its way home: jump resolution searches
+near the recorded line for the quote, so notes survive ordinary editing that
+shifts line numbers.
+
+Open the review board with `:Story annotations` (`<leader>sa`):
+
+- `<CR>` jumps to the source passage.
+- `r` toggles a note between `open` and `resolved`.
+- `d` deletes the note after confirmation.
+- `e` opens `notes/annotations.md` directly — it is plain Markdown, so you can
+  reorganize, expand, or rewrite notes however you like.
+
+Because the notes document lives outside `chapters/`, exports never see it,
+and nothing needs stripping from the manuscript. Legacy inline `%%comments%%`
+are still stripped on compile and still appear in the review board under a
+"legacy" section so you can find and convert them.
+
+![Annotations](assets/11-annotations.gif)
+
+## Saved Searches
+
+Collections are named queries over the scene index, stored in
+`.storyteller/collections.json`. Open them with `:Story collections`
+(`<leader>sC`), press `n` to save a new one, `<CR>` to run it.
+
+The query language is whitespace-separated tokens:
+
+| Token | Matches |
+| --- | --- |
+| `status:draft` | Scene status (`outline`, `draft`, …). |
+| `pov:Anna` | The scene's POV (partial match). |
+| `loc:harbor` | Location metadata. |
+| `char:odysseus` | Any entry in the `chars:` list. |
+| `tag:act1` | Any tag. |
+| `thread:storm` | Scenes whose `setup:` or `payoff:` mention the key. |
+| `chapter:two` | Chapter title substring. |
+| `storm` (bare word) | Substring of the scene title. |
+
+Tokens combine with AND semantics: `status:draft tag:war` finds draft scenes
+tagged for the war. For one-off queries skip the saving step:
+
+```
+:Story collect status:revision pov:Penelope
+```
+
+![Collections](assets/12-collections.gif)
 
 ## See Progress
 
@@ -214,6 +355,18 @@ Before a risky revision, use `:Story snapshot before-act-two`. A snapshot is a
 git commit whose subject starts with `storyteller:snapshot`; it creates no
 duplicate project files. Snapshots require a git repository, and Storyteller
 can offer to initialize one.
+
+Snapshots are most useful when you can see what changed since:
+
+- `:Story snapshots` lists them; `<CR>` on one opens a change summary.
+- `:Story diff` diffs the working tree against the most recent snapshot.
+- `:Story diff before` matches a snapshot by substring and diffs against it.
+
+The summary view lists every file changed since the snapshot with its diff
+stat; `<CR>` on a file opens a two-way vimdiff — snapshot version on the left,
+current prose on the right.
+
+![Snapshot diff](assets/15-snapshot-diff.gif)
 
 ## Try A Structure
 
@@ -272,6 +425,10 @@ Storyteller's default mappings live under `<leader>s`:
 | `<leader>sT` | Story template |
 | `<leader>sw` | Workspace |
 | `<leader>si` | Capture an idea |
+| `<leader>sa` | Review annotations |
+| `<leader>sN` | Capture a note from the selection |
+| `<leader>sC` | Collections |
+| `<leader>sz` | Composition mode |
 
 Every action is also available through `:Story`; use `:Story palette` when you
 cannot remember a keymap.
@@ -281,16 +438,27 @@ cannot remember a keymap.
 ```lua
 require("storyteller").setup({
   picker = "auto",          -- "auto" | "telescope" | "fzf"
-  ui = "auto",              -- "auto" | "morph" | "nui" | "buffer"
+  tui_bin = "storyteller-tui", -- the cockpit binary for :Story tui
+  tui_theme = nil,          -- "dark" | "light" | "midnight" | "forest" | "contrast"
+  tui_glyphs = nil,         -- "safe" | "nerd" (nerd ships later)
   detect_on_save = true,
   detect_debounce = 300,
   heatmap_weeks = 30,
+  notes_file = "notes/annotations.md",
 })
 ```
 
-The plugin has no required dependencies. `nui.nvim` and the picker backends
-improve the presentation and navigation when installed, while plain buffers
-remain available as a fallback. `pandoc` is only needed for export.
+The plugin has no required Lua dependencies. The picker backends improve the
+presentation and navigation when installed, while plain buffers remain
+available as a fallback. `pandoc` is only needed for export, and
+`storyteller-tui` only for `:Story tui`.
+
+`:Story tui` passes your colorscheme's background to the cockpit, so its
+palette follows the editor by default; pin a preset with `tui_theme`. See
+[`tui/README.md`](../tui/README.md) for the preset gallery and flags.
+
+Every open view refreshes itself when you save a file, so numbers on the
+dashboard, outline, and corkboard never go stale mid-session.
 
 For custom fields, statuses, reference types, and diagnostics, read the
 [schema reference](schema.md).

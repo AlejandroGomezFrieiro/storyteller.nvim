@@ -24,7 +24,13 @@ Sleep 3s
 Show
 Type ":Story corkboard"
 Enter
-Sleep 5s
+Sleep 4s
+# The board is an editable projection: cycle a card's status (staged).
+Type "jja"
+Sleep 2500ms
+# Re-render from disk to discard the staged edit.
+Type "R"
+Sleep 1500ms
 Hide
 Type ":qa!"
 Enter

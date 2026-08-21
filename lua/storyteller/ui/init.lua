@@ -1,10 +1,8 @@
 -- storyteller.ui
--- The UI layer: a single highlight palette, a backend probe (morph + nui with
--- a plain-buffer fallback), and a reusable view renderer used by every screen.
+-- The UI layer: a single highlight palette and a reusable view renderer used
+-- by every read-only screen. Editable surfaces live in ui/storyboard.lua.
 
 local M = {}
-
-local config = require("storyteller.config")
 
 -- --- Highlight palette (single home for all view colours) --------------------
 
@@ -16,93 +14,54 @@ function M.palette()
   end
   palette_done = true
 
-  -- Derive a group from a built-in target, carrying its colour forward while
-  -- layering on attributes (bold/italic/underline). Falls back to a plain link
-  -- when the target has no resolvable foreground.
-  local function style(name, target, opts)
-    opts = opts or {}
-    local ok, hl = pcall(vim.api.nvim_get_hl, 0, { name = target, link = false })
-    local def = { default = true }
-    if ok and hl and hl.fg then
-      def.fg = hl.fg
-      if opts.bg and hl.bg then
-        def.bg = hl.bg
-      end
-    else
-      def.link = target
-    end
-    if opts.bold then
-      def.bold = true
-    end
-    if opts.italic then
-      def.italic = true
-    end
-    if opts.underline then
-      def.underline = true
-    end
-    vim.api.nvim_set_hl(0, name, def)
-  end
+  vim.api.nvim_set_hl(0, "StorytellerTitle", { default = true, fg = "#f2d5cf", bold = true })
+  vim.api.nvim_set_hl(0, "StorytellerAccent", { default = true, fg = "#8caaee", bold = true })
+  vim.api.nvim_set_hl(0, "StorytellerSection", { default = true, fg = "#ca9ee6", bold = true })
+  vim.api.nvim_set_hl(0, "StorytellerScene", { default = true, fg = "#c6d0f5" })
+  vim.api.nvim_set_hl(0, "StorytellerMuted", { default = true, fg = "#949cbb", italic = true })
+  vim.api.nvim_set_hl(0, "StorytellerMetric", { default = true, fg = "#a6d189", bold = true })
+  vim.api.nvim_set_hl(0, "StorytellerKey", { default = true, fg = "#f4b8e4", bold = true })
+  vim.api.nvim_set_hl(0, "StorytellerDivider", { default = true, fg = "#626880" })
+  vim.api.nvim_set_hl(0, "StorytellerBar", { default = true, fg = "#8caaee" })
+  vim.api.nvim_set_hl(0, "StorytellerOutline", { default = true, fg = "#949cbb" })
+  vim.api.nvim_set_hl(0, "StorytellerDraft", { default = true, fg = "#f4b8e4" })
+  vim.api.nvim_set_hl(0, "StorytellerRevision", { default = true, fg = "#e5c890" })
+  vim.api.nvim_set_hl(0, "StorytellerDone", { default = true, fg = "#a6d189" })
+  vim.api.nvim_set_hl(0, "StorytellerUnused", { default = true, fg = "#e78284" })
+  vim.api.nvim_set_hl(0, "StorytellerCardBorder", { default = true, fg = "#626880" })
+  vim.api.nvim_set_hl(0, "StorytellerCardTitle", { default = true, fg = "#f2d5cf", bold = true })
+  vim.api.nvim_set_hl(0, "StorytellerCardMeta", { default = true, fg = "#b5bfe2" })
+  vim.api.nvim_set_hl(0, "StorytellerPanelTitle", { default = true, fg = "#8caaee", bold = true })
+  vim.api.nvim_set_hl(0, "StorytellerTableHeader", { default = true, fg = "#949cbb", bold = true })
+  -- Semantic slots mirroring tui/src/theme.rs (docs/tui-visual-plan.md §4):
+  -- Surface = card/panel background tint, Selection = focused row.
+  vim.api.nvim_set_hl(0, "StorytellerSurface", { default = true, bg = "#363b4e" })
+  vim.api.nvim_set_hl(0, "StorytellerSelection", { default = true, bg = "#414559" })
+  vim.api.nvim_set_hl(0, "StorytellerHeat0", { default = true, fg = "#414559" })
+  vim.api.nvim_set_hl(0, "StorytellerHeat1", { default = true, fg = "#737aa2" })
+  vim.api.nvim_set_hl(0, "StorytellerHeat2", { default = true, fg = "#8caaee" })
+  vim.api.nvim_set_hl(0, "StorytellerHeat3", { default = true, fg = "#ca9ee6" })
+  vim.api.nvim_set_hl(0, "StorytellerHeat4", { default = true, fg = "#f4b8e4" })
 
-  -- Triforce-inspired: a quiet deep background, jewel accents, and a small
-  -- number of emphatic colors so the dashboards feel rewarding, not noisy.
-  local direct = {
-    StorytellerTitle = { fg = "#f2d5cf", bold = true },
-    StorytellerAccent = { fg = "#8caaee", bold = true },
-    StorytellerSection = { fg = "#ca9ee6", bold = true },
-    StorytellerScene = { fg = "#c6d0f5" },
-    StorytellerMuted = { fg = "#949cbb", italic = true },
-    StorytellerMetric = { fg = "#a6d189", bold = true },
-    StorytellerKey = { fg = "#f4b8e4", bold = true },
-    StorytellerDivider = { fg = "#626880" },
-    StorytellerBar = { fg = "#8caaee" },
-    StorytellerOutline = { fg = "#949cbb" },
-    StorytellerDraft = { fg = "#f4b8e4" },
-    StorytellerRevision = { fg = "#e5c890" },
-    StorytellerDone = { fg = "#a6d189" },
-    StorytellerUnused = { fg = "#e78284" },
-    StorytellerCardBorder = { fg = "#626880" },
-    StorytellerCardTitle = { fg = "#f2d5cf", bold = true },
-    StorytellerCardMeta = { fg = "#b5bfe2" },
-    StorytellerPanelTitle = { fg = "#8caaee", bold = true },
-    StorytellerTableHeader = { fg = "#949cbb", bold = true },
-    StorytellerHeat0 = { fg = "#414559" },
-    StorytellerHeat1 = { fg = "#737aa2" },
-    StorytellerHeat2 = { fg = "#8caaee" },
-    StorytellerHeat3 = { fg = "#ca9ee6" },
-    StorytellerHeat4 = { fg = "#f4b8e4" },
-  }
-  for name, def in pairs(direct) do
-    vim.api.nvim_set_hl(0, name, vim.tbl_extend("force", { default = true }, def))
-  end
+  -- Composition mode: dimmed backdrop, calm writing surface.
+  local ok_bg, normal = pcall(vim.api.nvim_get_hl, 0, { name = "Normal", link = false })
+  local bg = (ok_bg and normal and normal.bg) or nil
+  vim.api.nvim_set_hl(0, "StorytellerComposeBackdrop", {
+    default = true,
+    fg = 0x000000,
+    bg = bg and M.darken(bg, 0.55) or "#1a1b26",
+  })
+  vim.api.nvim_set_hl(0, "StorytellerCompose", { default = true })
 end
 
-local function has(mod)
-  return pcall(require, mod)
-end
-
-function M.has_morph()
-  return has("storyteller.morph")
-end
-
-function M.has_nui()
-  return has("nui.popup") and has("nui.split") and has("nui.layout")
-end
-
-function M.backend()
-  local cfg = config.get()
-  if cfg.ui == "morph" and M.has_morph() then
-    return "morph"
-  end
-  if cfg.ui == "nui" and M.has_nui() then
-    return "nui"
-  end
-  if cfg.ui == "buffer" then
-    return "buffer"
-  end
-  if M.has_morph() then
-    return "morph"
-  end
-  return "buffer"
+-- Blend a color toward black by `amount` (0..1). Keeps composition mode's
+-- backdrop theme-aware.
+function M.darken(rgb, amount)
+  amount = math.max(0, math.min(1, amount or 0.5))
+  local r = math.floor((rgb % 256) * (1 - amount))
+  local g = math.floor((math.floor(rgb / 256) % 256) * (1 - amount))
+  local b = math.floor(math.floor(rgb / 65536) * (1 - amount))
+  return r + g * 256 + b * 65536
 end
 
 function M.status_hl(status)
@@ -125,13 +84,10 @@ local function key(name, root)
 end
 
 -- Render `lines` (array of { text, hl? } or plain strings) into a nofile
--- buffer, with a `select` map of display-line-number -> data. Uses the morph
--- renderer when available, otherwise a plain highlight path.
+-- buffer, with a `select` map of display-line-number -> data.
 function M.render_view(buf, lines, select)
   M.palette()
-  if not M.morph_render(buf, lines) then
-    M.buffer_render(buf, lines)
-  end
+  M.buffer_render(buf, lines)
   vim.b[buf].storyteller_select = select or {}
   return select
 end
@@ -227,12 +183,13 @@ function M.grid_panels(panels)
   local columns = {}
   for i, panel in ipairs(panels) do
     local col = {}
-    local width = 0
+    local title_len
     if type(panel.title) == "table" then
-      width = line_width(panel.title)
+      title_len = line_width(panel.title)
     else
-      width = #tostring(panel.title or "")
+      title_len = #tostring(panel.title or "")
     end
+    local width = title_len
     for _, row in ipairs(panel.rows) do
       local lw = line_width(row)
       if lw > width then
@@ -250,13 +207,10 @@ function M.grid_panels(panels)
     else
       top[#top + 1] = { text = tostring(panel.title or ""), hl = "StorytellerPanelTitle" }
     end
-    local title_len = 0
-    if type(panel.title) == "table" then
-      title_len = line_width(panel.title)
-    else
-      title_len = #tostring(panel.title or "")
-    end
-    top[#top + 1] = { text = string.rep("─", math.max(1, width - title_len)) .. "╮", hl = "StorytellerDivider" }
+    top[#top + 1] = {
+      text = string.rep("─", math.max(1, width - title_len)) .. "╮",
+      hl = "StorytellerDivider",
+    }
     col[#col + 1] = { segments = top }
     -- Body rows, padded to a common width.
     for _, row in ipairs(panel.rows) do
@@ -272,56 +226,11 @@ function M.grid_panels(panels)
       col[#col + 1] = { segments = segs }
     end
     -- Bottom border.
-    col[#col + 1] = { text = "╰" .. string.rep("─", width + 2) .. "╯", hl = "StorytellerDivider" }
+    col[#col + 1] =
+      { text = "╰" .. string.rep("─", width + 2) .. "╯", hl = "StorytellerDivider" }
     columns[i] = col
   end
   return M.compose_columns(columns, 1)
-end
-
--- Render via morph.nvim (declarative, reconciled). Returns false to fall back.
-local morph_renderers = {}
-
-function M.morph_render(buf, lines)
-  if M.backend() ~= "morph" then
-    return false
-  end
-  local ok, morph = pcall(require, "storyteller.morph")
-  if not ok then
-    return false
-  end
-  local h = morph.h
-  local tree = {}
-  for i, item in ipairs(lines) do
-    if i > 1 then
-      tree[#tree + 1] = "\n"
-    end
-    for _, run in ipairs(runs(item)) do
-      if run.hl then
-        tree[#tree + 1] = h("text", { hl = run.hl }, run.text)
-      else
-        tree[#tree + 1] = run.text
-      end
-    end
-  end
-  local renderer = morph_renderers[buf]
-  if not renderer then
-    local ok2, r = pcall(morph.new, buf)
-    if not ok2 then
-      return false
-    end
-    renderer = r
-    morph_renderers[buf] = renderer
-  end
-  vim.bo[buf].modifiable = true
-  local ok3 = pcall(function()
-    renderer:mount(tree)
-  end)
-  vim.bo[buf].modifiable = false
-  return ok3
-end
-
-function M.morph_forget(buf)
-  morph_renderers[buf] = nil
 end
 
 -- Plain buffer renderer (always available).
@@ -369,7 +278,10 @@ function M.view(opts)
   local buf = buffers[id]
   if not (buf and vim.api.nvim_buf_is_valid(buf)) then
     buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(buf, "storyteller://" .. opts.name .. "/" .. vim.fn.fnamemodify(prj.root, ":t"))
+    vim.api.nvim_buf_set_name(
+      buf,
+      "storyteller://" .. opts.name .. "/" .. vim.fn.fnamemodify(prj.root, ":t")
+    )
     vim.bo[buf].buftype = "nofile"
     vim.bo[buf].bufhidden = "wipe"
     vim.bo[buf].swapfile = false
@@ -381,7 +293,6 @@ function M.view(opts)
       once = true,
       callback = function()
         buffers[id] = nil
-        M.morph_forget(buf)
       end,
     })
   end
@@ -461,10 +372,18 @@ end
 
 function M.heatmap_segments(deltas)
   local function level(delta)
-    if not delta or delta <= 0 then return "StorytellerHeat0" end
-    if delta < 250 then return "StorytellerHeat1" end
-    if delta < 750 then return "StorytellerHeat2" end
-    if delta < 1500 then return "StorytellerHeat3" end
+    if not delta or delta <= 0 then
+      return "StorytellerHeat0"
+    end
+    if delta < 250 then
+      return "StorytellerHeat1"
+    end
+    if delta < 750 then
+      return "StorytellerHeat2"
+    end
+    if delta < 1500 then
+      return "StorytellerHeat3"
+    end
     return "StorytellerHeat4"
   end
   local rows = {}

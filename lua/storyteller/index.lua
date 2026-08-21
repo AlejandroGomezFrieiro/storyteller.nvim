@@ -22,12 +22,37 @@ local function is_excluded(relpath)
   return false
 end
 
+-- mtime+size keyed line cache: repeated scans stat files instead of re-reading.
+local lines_cache = {} -- path -> { sig, lines }
+
+local function fsig(path)
+  local st = vim.loop.fs_stat(path)
+  if not st then
+    return nil
+  end
+  return st.mtime.sec .. "." .. st.mtime.nsec .. ":" .. st.size
+end
+
+local function cached_lines(path)
+  local sig = fsig(path)
+  if not sig then
+    return {}
+  end
+  local c = lines_cache[path]
+  if c and c.sig == sig then
+    return c.lines
+  end
+  local lines = vim.fn.readfile(path)
+  lines_cache[path] = { sig = sig, lines = lines }
+  return lines
+end
+
 -- rg if configured, else glob fallback. Returns absolute file paths.
 local function list_md(dir)
   if not dir or vim.fn.isdirectory(dir) ~= 1 then
     return {}
   end
-  local rg = config.get().rg
+  local rg = config.bin("rg")
   local out = {}
   if rg then
     local lines = vim.fn.systemlist({ rg, "--files", "--glob", "*.md", dir })
@@ -59,7 +84,7 @@ end
 -- A scene starts at a `## ` heading (top-level H2) and runs to the next one
 -- (or EOF). Metadata merges chapter frontmatter + inline bullets + scene YAML.
 local function parse_chapter(path)
-  local lines = vim.fn.readfile(path)
+  local lines = cached_lines(path)
   local info = {
     path = path,
     filename = vim.fn.fnamemodify(path, ":t"),
@@ -146,7 +171,7 @@ end
 -- `names:` aliases from frontmatter. The primary name is the leading token
 -- before an em/en-dash or colon.
 local function parse_reference(path)
-  local lines = vim.fn.readfile(path)
+  local lines = cached_lines(path)
   local title = nil
   for i = 1, math.min(#lines, 16) do
     local h = lines[i]:match("^#+%s+(.*)$")
@@ -168,16 +193,40 @@ end
 
 -- --- Public API -------------------------------------------------------------
 
--- Chapters in a project (lexical file order).
+-- mtime-keyed caches so repeated scans (dashboard refresh, statusline, etc.)
+-- stat files instead of re-reading and re-parsing them.
+local chapter_cache = {} -- root -> { files, sigs, chapters }
+
+-- Chapters in a project (lexical file order). Parsed chapters are cached per
+-- root and invalidated when any listed file's mtime/size changes.
 M.chapters = function(prj)
   prj = prj or project.current()
   if not prj then
     return {}
   end
+  local files = list_md(prj.chapters)
+  local sigs = {}
+  for _, p in ipairs(files) do
+    sigs[p] = fsig(p)
+  end
+  local c = chapter_cache[prj.root]
+  if c and #c.files == #files then
+    local same = true
+    for i, p in ipairs(files) do
+      if c.files[i] ~= p or c.sigs[p] ~= sigs[p] then
+        same = false
+        break
+      end
+    end
+    if same then
+      return c.chapters
+    end
+  end
   local out = {}
-  for _, p in ipairs(list_md(prj.chapters)) do
+  for _, p in ipairs(files) do
     out[#out + 1] = parse_chapter(p)
   end
+  chapter_cache[prj.root] = { files = files, sigs = sigs, chapters = out }
   return out
 end
 
@@ -202,9 +251,11 @@ local function count_prose(lines, start_line, end_line)
     local line = lines[line_number] or ""
     if line:match("^```") then
       in_fence = not in_fence
-    elseif not in_fence
+    elseif
+      not in_fence
       and not line:match("^%s*#")
-      and not line:match("^%s*-%s*%*%*[%a ]+%*%*:%s*") then
+      and not line:match("^%s*-%s*%*%*[%a ]+%*%*:%s*")
+    then
       for _ in line:gmatch("%S+") do
         count = count + 1
       end
@@ -213,8 +264,10 @@ local function count_prose(lines, start_line, end_line)
   return count
 end
 
+M.count_prose = count_prose
+
 M.scene_words = function(sc)
-  local lines = vim.fn.readfile(sc.path)
+  local lines = cached_lines(sc.path)
   local block = sc.yaml or meta.scene_block(lines, sc.start_line, sc.end_line or #lines)
   return count_prose(lines, block.content_start or (sc.start_line + 1), sc.end_line or #lines)
 end
@@ -224,7 +277,7 @@ M.chapter_words = function(ch)
   for _, sc in ipairs(ch.scenes) do
     total = total + (sc.words or M.scene_words(sc))
   end
-  local lines = vim.fn.readfile(ch.path)
+  local lines = cached_lines(ch.path)
   local first = ch.scenes[1]
   local start = 1
   if lines[1] == "---" then
@@ -312,7 +365,9 @@ M.plot_threads = function(prj)
   local threads = {}
   local function add(value, side, scene)
     if type(value) == "table" then
-      for _, item in ipairs(value) do add(item, side, scene) end
+      for _, item in ipairs(value) do
+        add(item, side, scene)
+      end
     elseif value and tostring(value) ~= "" then
       local key = tostring(value)
       threads[key] = threads[key] or { key = key, setup = {}, payoff = {} }
@@ -329,7 +384,9 @@ M.plot_threads = function(prj)
       or (#thread.setup > 0 and "needs payoff" or "needs setup")
     out[#out + 1] = thread
   end
-  table.sort(out, function(a, b) return a.key < b.key end)
+  table.sort(out, function(a, b)
+    return a.key < b.key
+  end)
   return out
 end
 
@@ -353,7 +410,8 @@ M.story_health = function(prj)
   end
   for _, thread in ipairs(M.plot_threads(prj)) do
     if thread.state ~= "complete" then
-      findings[#findings + 1] = { kind = "thread", label = thread.key .. " · " .. thread.state, thread = thread }
+      findings[#findings + 1] =
+        { kind = "thread", label = thread.key .. " · " .. thread.state, thread = thread }
     end
   end
   return findings
@@ -370,7 +428,11 @@ M.current_scene = function(prj)
   local file = vim.api.nvim_buf_get_name(0)
   local cursor = vim.api.nvim_win_get_cursor(0)[1]
   for _, scene in ipairs(M.scenes(prj)) do
-    if scene.path == file and scene.start_line <= cursor and cursor <= (scene.end_line or math.huge) then
+    if
+      scene.path == file
+      and scene.start_line <= cursor
+      and cursor <= (scene.end_line or math.huge)
+    then
       return scene
     end
   end
@@ -386,5 +448,12 @@ end
 
 M.list_md = list_md
 M.parse_chapter = parse_chapter
+M.cached_lines = cached_lines
+
+-- Drop all caches (used by tests and by schema/config reloads).
+M.invalidate = function()
+  lines_cache = {}
+  chapter_cache = {}
+end
 
 return M

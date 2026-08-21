@@ -15,9 +15,11 @@ local M = {}
 -- Keep any clean open buffers aligned with what we just wrote to disk.
 function M.sync_clean_buffers(path, lines)
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_valid(bufnr)
+    if
+      vim.api.nvim_buf_is_valid(bufnr)
       and vim.api.nvim_buf_get_name(bufnr) == path
-      and not vim.bo[bufnr].modified then
+      and not vim.bo[bufnr].modified
+    then
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
       vim.bo[bufnr].modified = false
     end
@@ -35,6 +37,7 @@ function M.new_id(scene)
 end
 
 -- Merge a patch into chapter frontmatter. Returns the merged meta.
+-- `vim.NIL` removes a managed field instead of writing it.
 function M.chapter_write(path, patch)
   local doc = read.chapter(path)
   if not doc then
@@ -42,11 +45,18 @@ function M.chapter_write(path, patch)
   end
   doc.meta = doc.meta or {}
   for k, v in pairs(patch or {}) do
-    doc.meta[k] = v
+    if v == vim.NIL then
+      doc.meta[k] = nil
+    else
+      doc.meta[k] = v
+    end
   end
   local new_lines = {}
   if doc.had_block and doc.frontmatter and doc.original_meta then
-    vim.list_extend(new_lines, serde.patch_frontmatter(doc.frontmatter, doc.original_meta, doc.meta))
+    vim.list_extend(
+      new_lines,
+      serde.patch_frontmatter(doc.frontmatter, doc.original_meta, doc.meta)
+    )
   elseif not vim.tbl_isempty(doc.meta) then
     vim.list_extend(new_lines, serde.encode_frontmatter(doc.meta))
   end
@@ -64,7 +74,11 @@ function M.scene_write(scene, patch)
   local block = serde.parse_scene_block(lines, scene.start_line, scene.end_line or #lines)
   local meta = block.meta or {}
   for k, v in pairs(patch or {}) do
-    meta[k] = v
+    if v == vim.NIL then
+      meta[k] = nil
+    else
+      meta[k] = v
+    end
   end
   if not meta.id then
     meta.id = M.new_id(scene)

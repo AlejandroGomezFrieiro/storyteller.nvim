@@ -68,7 +68,18 @@ M.context = function(bufnr)
     end
   end
 
-  local cw = vim.fn.wordcount().words
+  -- Prose-only count (frontmatter, scene YAML, and metadata bullets excluded)
+  -- so the statusline agrees with outline/tracking numbers.
+  local start = 1
+  if lines[1] == "---" then
+    for i = 2, #lines do
+      if lines[i] == "---" then
+        start = i + 1
+        break
+      end
+    end
+  end
+  local cw = index.count_prose(lines, start, #lines)
   return {
     scene_words = scene_words,
     chapter_words = cw,

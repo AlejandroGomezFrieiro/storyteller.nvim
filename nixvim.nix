@@ -68,7 +68,7 @@ in {
   config = lib.mkIf cfg.enable {
     # Put the plugin on the runtimepath so `plugin/storyteller.lua` loads.
     # nui.nvim is optional: the plugin's views degrade to plain buffers
-    # without it. morph.nvim is vendored inside the plugin itself.
+    # without it.
     extraPlugins = [storytellerPkg]
       ++ lib.optional cfg.ui.enable pkgs.vimPlugins.nui-nvim;
 

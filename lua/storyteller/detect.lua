@@ -134,7 +134,16 @@ local function scene_tokens(sc)
     local ln = lines[i]
     if ln then
       local marker = ln:match("^%s*(.)")
-      if not (i == sc.start_line or marker == "-" or marker == "*" or marker == ">" or marker == "#" or marker == "`") then
+      if
+        not (
+          i == sc.start_line
+          or marker == "-"
+          or marker == "*"
+          or marker == ">"
+          or marker == "#"
+          or marker == "`"
+        )
+      then
         for w in ln:gmatch("%S+") do
           toks[#toks + 1] = w
         end
@@ -187,8 +196,13 @@ M.detect_scene = function(sc, prj, idx)
       if entry then
         local short = entry.name:lower()
         local full = (entry.reference.title or entry.name):lower()
-        if (not used[short]) and (not linked[short]) and (not linked[full])
-          and (not ignored[short]) and (not ignored[full]) then
+        if
+          not used[short]
+          and not linked[short]
+          and not linked[full]
+          and not ignored[short]
+          and not ignored[full]
+        then
           sugs[#sugs + 1] = {
             name = entry.name,
             confidence = entry.confidence,

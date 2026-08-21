@@ -17,18 +17,18 @@ end
 
 M.backend = function()
   local cfg = config.get().picker
-  if cfg == "telescope" and has "telescope.builtin" then
+  if cfg == "telescope" and has("telescope.builtin") then
     return "telescope"
   end
-  if cfg == "fzf" and has "fzf-lua" then
+  if cfg == "fzf" and has("fzf-lua") then
     return "fzf"
   end
   -- auto
   if cfg == "auto" then
-    if has "telescope.builtin" then
+    if has("telescope.builtin") then
       return "telescope"
     end
-    if has "fzf-lua" then
+    if has("fzf-lua") then
       return "fzf"
     end
   end
