@@ -6,6 +6,7 @@
 //! editor's projection buffers; this app is the glance-and-review surface.
 
 mod project;
+mod store;
 mod theme;
 mod ui;
 
@@ -144,11 +145,10 @@ fn main() -> Result<()> {
             Event::Mouse(mouse) => match mouse.kind {
                 MouseEventKind::ScrollDown => list_state.select_next(),
                 MouseEventKind::ScrollUp => list_state.select_previous(),
-                MouseEventKind::Down(_) => {
-                    if tab != Tab::Dashboard {
+                MouseEventKind::Down(_)
+                    if tab != Tab::Dashboard => {
                         list_state.select(Some(mouse.row.saturating_sub(2) as usize));
                     }
-                }
                 _ => {}
             },
             _ => {}

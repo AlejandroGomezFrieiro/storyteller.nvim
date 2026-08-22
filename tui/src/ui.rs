@@ -253,7 +253,6 @@ fn centered(area: Rect) -> Rect {
         y: area.y + area.height / 2,
         width: area.width.saturating_sub(4),
         height: 1,
-        ..area
     }
 }
 

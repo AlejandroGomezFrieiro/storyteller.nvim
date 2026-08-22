@@ -15,3 +15,6 @@ unicode-width = "0.2"
 [[bin]]
 name = "storyteller-tui"
 path = "src/main.rs"
+
+[dev-dependencies]
+serde_json = "1"
