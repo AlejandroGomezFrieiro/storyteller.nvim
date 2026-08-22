@@ -427,8 +427,8 @@ M.timeline = function(prj, axis)
       scene.timeline_numeric = numeric
       scene.timeline_rank = rank_of(value)
       scene.timeline_secondary = false
-      scene.timeline_regression =
-        numeric and previous_numeric and numeric < previous_numeric or false
+      scene.timeline_regression = numeric and previous_numeric and numeric < previous_numeric
+        or false
       if numeric then
         previous_numeric = numeric
       end
@@ -437,7 +437,8 @@ M.timeline = function(prj, axis)
     for _, entry in ipairs(type(m.also) == "table" and m.also or { m.also }) do
       local text = entry and tostring(entry) or ""
       local ax = text:match("timeline:%s*([^,}]+)")
-      local coord = text:match("at:%s*([^,}]+)") or text:match("day:%s*([^,}]+)")
+      local coord = text:match("at:%s*([^,}]+)")
+        or text:match("day:%s*([^,}]+)")
         or text:match("time:%s*([^,}]+)")
       if ax and coord then
         ax = vim.trim(ax)
@@ -618,8 +619,12 @@ M.plotlines = function(prj)
               and previous.rank ~= nil
               and rank ~= nil
               and rank < previous.rank
-            lane.scenes[#lane.scenes + 1] =
-              { scene = scene, stage = m.stage and tostring(m.stage) or nil, rank = rank, regression = regression }
+            lane.scenes[#lane.scenes + 1] = {
+              scene = scene,
+              stage = m.stage and tostring(m.stage) or nil,
+              rank = rank,
+              regression = regression,
+            }
           end
         end
       end

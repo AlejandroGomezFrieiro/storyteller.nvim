@@ -47,23 +47,65 @@ impl Side {
 #[derive(Debug, Clone)]
 pub enum Op {
     /// Write one scene YAML key; `None` removes it.
-    SetField { scene: SceneRef, key: String, value: Option<String> },
+    SetField {
+        scene: SceneRef,
+        key: String,
+        value: Option<String>,
+    },
     /// Coordinate write: rewrites whichever of `at:`/`day:`/`time:` holds the
     /// coordinate (default `day` when unscheduled); `None` clears scheduling.
-    SetCoord { scene: SceneRef, coord: Option<String> },
+    SetCoord {
+        scene: SceneRef,
+        coord: Option<String>,
+    },
     /// Append one `also:` placement as a flow-map string.
-    AddPlacement { scene: SceneRef, axis: String, coord: String },
+    AddPlacement {
+        scene: SceneRef,
+        axis: String,
+        coord: String,
+    },
     /// Remove the `also:` placement focused on `axis`.
-    RemovePlacement { scene: SceneRef, axis: String },
+    RemovePlacement {
+        scene: SceneRef,
+        axis: String,
+    },
     /// Stage-cell write; sugar for `SetField("stage")`.
-    SetStage { scene: SceneRef, stage: Option<String> },
-    AttachPlotline { scene: SceneRef, name: String },
-    DetachPlotline { scene: SceneRef, name: String },
-    AttachThread { scene: SceneRef, side: Side, key: String },
-    DetachThread { scene: SceneRef, side: Side, key: String },
-    AddEdge { card: CardRef, to: String, kind: String },
-    RemoveEdge { card: CardRef, to: String },
-    RenameEdge { card: CardRef, to: String, kind: String },
+    SetStage {
+        scene: SceneRef,
+        stage: Option<String>,
+    },
+    AttachPlotline {
+        scene: SceneRef,
+        name: String,
+    },
+    DetachPlotline {
+        scene: SceneRef,
+        name: String,
+    },
+    AttachThread {
+        scene: SceneRef,
+        side: Side,
+        key: String,
+    },
+    DetachThread {
+        scene: SceneRef,
+        side: Side,
+        key: String,
+    },
+    AddEdge {
+        card: CardRef,
+        to: String,
+        kind: String,
+    },
+    RemoveEdge {
+        card: CardRef,
+        to: String,
+    },
+    RenameEdge {
+        card: CardRef,
+        to: String,
+        kind: String,
+    },
 }
 
 impl Op {
@@ -126,11 +168,20 @@ impl Op {
                 format!("{}:{} -{} {}", scene.file, scene.line, side.field(), key)
             }
             Op::SetStage { scene, stage } => {
-                format!("{}:{} stage={}", scene.file, scene.line, stage.as_deref().unwrap_or("—"))
+                format!(
+                    "{}:{} stage={}",
+                    scene.file,
+                    scene.line,
+                    stage.as_deref().unwrap_or("—")
+                )
             }
-            Op::AddEdge { card, to, kind } => format!("{}:{} +edge {} {}", card.file, card.line, kind, to),
+            Op::AddEdge { card, to, kind } => {
+                format!("{}:{} +edge {} {}", card.file, card.line, kind, to)
+            }
             Op::RemoveEdge { card, to } => format!("{}:{} -edge {}", card.file, card.line, to),
-            Op::RenameEdge { card, to, kind } => format!("{}:{} edge {}→{}", card.file, card.line, to, kind),
+            Op::RenameEdge { card, to, kind } => {
+                format!("{}:{} edge {}→{}", card.file, card.line, to, kind)
+            }
         }
     }
 }
@@ -163,7 +214,11 @@ fn scene_block(lines: &[String], heading: usize) -> Option<Block> {
     if close >= lines.len() {
         return None;
     }
-    Some(Block { fence: first, sentinel, close })
+    Some(Block {
+        fence: first,
+        sentinel,
+        close,
+    })
 }
 
 /// Top-level key ranges inside a block's content: (key, start, stop) inclusive,
@@ -346,10 +401,9 @@ fn relation_items(lines: &[String], fm: &Frontmatter) -> Vec<(usize, usize, Stri
                 if let Some((k, v)) = line.trim().split_once(':') {
                     match k.trim() {
                         "kind" => *kind = v.trim().to_string(),
-                        "to"
-                            if to.is_empty() => {
-                                *to = v.trim().to_string();
-                            }
+                        "to" if to.is_empty() => {
+                            *to = v.trim().to_string();
+                        }
                         _ => {}
                     }
                 }
@@ -463,7 +517,10 @@ fn fingerprint(root: &Path) -> Result<Vec<(String, u128, u64)>> {
     while let Some(d) = stack.pop() {
         for entry in fs::read_dir(&d).with_context(|| d.display().to_string())? {
             let path = entry?.path();
-            let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
             if name.starts_with('_') || name.starts_with('.') {
                 continue;
             }
@@ -478,7 +535,10 @@ fn fingerprint(root: &Path) -> Result<Vec<(String, u128, u64)>> {
                     .map(|d| d.as_nanos())
                     .unwrap_or(0);
                 out.push((
-                    path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_string(),
+                    path.strip_prefix(root)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .to_string(),
                     mtime,
                     meta.len(),
                 ));
@@ -505,7 +565,14 @@ fn git_snapshot(root: &Path, note: &str) {
         .args(["-C", &root.display().to_string(), "add", "-A"])
         .output();
     let _ = std::process::Command::new("git")
-        .args(["-C", &root.display().to_string(), "commit", "-q", "-m", &subject])
+        .args([
+            "-C",
+            &root.display().to_string(),
+            "commit",
+            "-q",
+            "-m",
+            &subject,
+        ])
         .output();
 }
 
@@ -574,8 +641,8 @@ impl Store {
         for (file, mut ops) in per_file {
             ops.sort_by_key(|op| std::cmp::Reverse(op.line()));
             let path = self.root.join(&file);
-            let text = fs::read_to_string(&path)
-                .with_context(|| format!("reading {}", path.display()))?;
+            let text =
+                fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
             let mut lines: Vec<String> = text.lines().map(String::from).collect();
             let mut count = 0usize;
             for op in &ops {
@@ -605,11 +672,12 @@ impl Store {
                 scene_set_field(lines, scene.line, key, value.as_deref())
             }
             Op::SetCoord { scene, coord } => {
-                let b = scene_block(lines, scene.line)
-                    .ok_or_else(|| anyhow!("scene at line {} has no metadata block", scene.line + 1))?;
-                let holding = key_ranges(lines, &b).into_iter().find_map(|(k, _, _)| {
-                    ["at", "day", "time"].contains(&k.as_str()).then_some(k)
-                });
+                let b = scene_block(lines, scene.line).ok_or_else(|| {
+                    anyhow!("scene at line {} has no metadata block", scene.line + 1)
+                })?;
+                let holding = key_ranges(lines, &b)
+                    .into_iter()
+                    .find_map(|(k, _, _)| ["at", "day", "time"].contains(&k.as_str()).then_some(k));
                 if coord.is_none() && holding.is_none() {
                     return Ok(false);
                 }
@@ -618,12 +686,12 @@ impl Store {
             }
             Op::AddPlacement { scene, axis, coord } => {
                 let item = format!("{{ timeline: {axis}, at: {coord} }}");
-                list_add(lines, scene.line, "also", &item)
-                    .map(|_| true)
+                list_add(lines, scene.line, "also", &item).map(|_| true)
             }
             Op::RemovePlacement { scene, axis } => {
-                let b = scene_block(lines, scene.line)
-                    .ok_or_else(|| anyhow!("scene at line {} has no metadata block", scene.line + 1))?;
+                let b = scene_block(lines, scene.line).ok_or_else(|| {
+                    anyhow!("scene at line {} has no metadata block", scene.line + 1)
+                })?;
                 let ranges = key_ranges(lines, &b);
                 let _needle_prefix = "{ timeline: ";
                 for (k, start, stop) in ranges {
@@ -654,9 +722,7 @@ impl Store {
             Op::AttachPlotline { scene, name } => {
                 list_add(lines, scene.line, "plotlines", name).map(|_| true)
             }
-            Op::DetachPlotline { scene, name } => {
-                list_remove(lines, scene.line, "plotlines", name)
-            }
+            Op::DetachPlotline { scene, name } => list_remove(lines, scene.line, "plotlines", name),
             Op::AttachThread { scene, side, key } => {
                 list_add(lines, scene.line, side.field(), key).map(|_| true)
             }
@@ -664,19 +730,19 @@ impl Store {
                 list_remove(lines, scene.line, side.field(), key)
             }
             Op::AddEdge { card, to, kind } => {
-                let fm =
-                    frontmatter(lines).ok_or_else(|| anyhow!("card at line {} has no frontmatter", card.line + 1))?;
+                let fm = frontmatter(lines)
+                    .ok_or_else(|| anyhow!("card at line {} has no frontmatter", card.line + 1))?;
                 edge_add(lines, &fm, card.line, to, kind);
                 Ok(true)
             }
             Op::RemoveEdge { card, to } => {
-                let fm =
-                    frontmatter(lines).ok_or_else(|| anyhow!("card at line {} has no frontmatter", card.line + 1))?;
+                let fm = frontmatter(lines)
+                    .ok_or_else(|| anyhow!("card at line {} has no frontmatter", card.line + 1))?;
                 Ok(edge_remove(lines, &fm, to))
             }
             Op::RenameEdge { card, to, kind } => {
-                let fm =
-                    frontmatter(lines).ok_or_else(|| anyhow!("card at line {} has no frontmatter", card.line + 1))?;
+                let fm = frontmatter(lines)
+                    .ok_or_else(|| anyhow!("card at line {} has no frontmatter", card.line + 1))?;
                 edge_rename(lines, &fm, to, kind).map(|_| true)
             }
         }
@@ -688,7 +754,14 @@ mod tests {
     use super::*;
 
     fn write_project(files: &[(&str, &str)]) -> (PathBuf, Vec<(String, PathBuf)>) {
-        let dir = std::env::temp_dir().join(format!("st-store-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos()));
+        let dir = std::env::temp_dir().join(format!(
+            "st-store-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
         for (rel, content) in files {
             let full = dir.join(rel);
             fs::create_dir_all(full.parent().unwrap()).unwrap();
@@ -747,7 +820,10 @@ mod tests {
         let out = lines.join("\n");
         assert!(out.contains("plotlines:\n  - Suitors"), "one item left");
         assert!(list_remove(&mut lines, 2, "plotlines", "Suitors").unwrap());
-        assert!(!lines.join("\n").contains("plotlines"), "emptied list drops its key");
+        assert!(
+            !lines.join("\n").contains("plotlines"),
+            "emptied list drops its key"
+        );
     }
 
     #[test]
@@ -756,7 +832,10 @@ mod tests {
         let mut lines: Vec<String> = base.lines().map(String::from).collect();
 
         Op::AddPlacement {
-            scene: SceneRef { file: "chapters/01.md".into(), line: 2 },
+            scene: SceneRef {
+                file: "chapters/01.md".into(),
+                line: 2,
+            },
             axis: "Far".into(),
             coord: "5".into(),
         }
@@ -764,7 +843,10 @@ mod tests {
         assert!(lines.join("\n").contains("  - { timeline: Far, at: 5 }"));
 
         Op::RemovePlacement {
-            scene: SceneRef { file: "chapters/01.md".into(), line: 2 },
+            scene: SceneRef {
+                file: "chapters/01.md".into(),
+                line: 2,
+            },
             axis: "Past".into(),
         }
         .apply_to(&mut lines);
@@ -784,7 +866,10 @@ mod tests {
         let base = "---\nnames:\n  - Odysseus\nrelations:\n  - { to: Penelope, kind: spouse }\n  - to: Telemachus\n    kind: parent\n  - rival: Poseidon\n---\n\n## Odysseus\n";
         let mut lines: Vec<String> = base.lines().map(String::from).collect();
         let fm = frontmatter(&lines).unwrap();
-        let card = CardRef { file: "references/characters/odysseus.md".into(), line: 9 };
+        let card = CardRef {
+            file: "references/characters/odysseus.md".into(),
+            line: 9,
+        };
 
         // Add appends block-map form.
         edge_add(&mut lines, &fm, card.line, "Mentor", "serves");
@@ -803,7 +888,9 @@ mod tests {
         // documented exception.
         let fm = frontmatter(&lines).unwrap();
         edge_rename(&mut lines, &fm, "Poseidon", "enemy").unwrap();
-        assert!(lines.join("\n").contains("  - to: Poseidon\n    kind: enemy"));
+        assert!(lines
+            .join("\n")
+            .contains("  - to: Poseidon\n    kind: enemy"));
 
         // Removal matches by `to` regardless of syntax.
         let fm = frontmatter(&lines).unwrap();
@@ -816,14 +903,20 @@ mod tests {
         let (dir, paths) = write_project(&[("chapters/01.md", CHAPTER)]);
         let mut store = Store::new(&dir).unwrap();
         store.stage(Op::SetField {
-            scene: SceneRef { file: "chapters/01.md".into(), line: 2 },
+            scene: SceneRef {
+                file: "chapters/01.md".into(),
+                line: 2,
+            },
             key: "day".into(),
             value: Some("7".into()),
         });
         store.stage(Op::AddEdge {
             // A card file that does not exist: the transform pass fails
             // before any write lands.
-            card: CardRef { file: "chapters/missing.md".into(), line: 0 },
+            card: CardRef {
+                file: "chapters/missing.md".into(),
+                line: 0,
+            },
             to: "Athena".into(),
             kind: "ally".into(),
         });
@@ -841,9 +934,16 @@ mod tests {
         let mut store = Store::new(&dir).unwrap();
         // External edit behind the store's back.
         std::thread::sleep(std::time::Duration::from_millis(20));
-        fs::write(dir.join("chapters/01.md"), format!("{CHAPTER}\n## Extra\nprose\n")).unwrap();
+        fs::write(
+            dir.join("chapters/01.md"),
+            format!("{CHAPTER}\n## Extra\nprose\n"),
+        )
+        .unwrap();
         store.stage(Op::SetField {
-            scene: SceneRef { file: "chapters/01.md".into(), line: 2 },
+            scene: SceneRef {
+                file: "chapters/01.md".into(),
+                line: 2,
+            },
             key: "day".into(),
             value: Some("7".into()),
         });
@@ -862,12 +962,18 @@ mod tests {
         ]);
         let mut store = Store::new(&dir).unwrap();
         store.stage(Op::SetField {
-            scene: SceneRef { file: "chapters/01.md".into(), line: 2 },
+            scene: SceneRef {
+                file: "chapters/01.md".into(),
+                line: 2,
+            },
             key: "day".into(),
             value: Some("8".into()),
         });
         store.stage(Op::AddEdge {
-            card: CardRef { file: "references/characters/odysseus.md".into(), line: 6 },
+            card: CardRef {
+                file: "references/characters/odysseus.md".into(),
+                line: 6,
+            },
             to: "Athena".into(),
             kind: "ally".into(),
         });
@@ -900,7 +1006,8 @@ mod tests {
             let fx: serde_json::Value = serde_json::from_str(&raw).unwrap();
             let name = fx["name"].as_str().unwrap_or("?").to_string();
 
-            let tmp = std::env::temp_dir().join(format!("st-fixture-{}-{}", std::process::id(), name));
+            let tmp =
+                std::env::temp_dir().join(format!("st-fixture-{}-{}", std::process::id(), name));
             if tmp.exists() {
                 fs::remove_dir_all(&tmp).unwrap();
             }
@@ -942,7 +1049,11 @@ mod tests {
             for (rel, want) in fx["expect"].as_object().unwrap() {
                 let got = fs::read_to_string(tmp.join(rel)).unwrap();
                 // Fixture strings carry a trailing newline; atomic_write adds one.
-                assert_eq!(got.trim_end(), want.as_str().unwrap().trim_end(), "fixture {name}: {rel}");
+                assert_eq!(
+                    got.trim_end(),
+                    want.as_str().unwrap().trim_end(),
+                    "fixture {name}: {rel}"
+                );
             }
             checked += 1;
             fs::remove_dir_all(&tmp).ok();

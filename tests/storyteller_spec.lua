@@ -1185,7 +1185,10 @@ do
   assert_true(text:match("The cave") == nil, "unused chapter is excluded from compilation")
 
   -- Word totals skip shelved work.
-  assert_true(index.chapter_words(chapters[1]) == 6, "unused scenes stay out of chapter word totals")
+  assert_true(
+    index.chapter_words(chapters[1]) == 6,
+    "unused scenes stay out of chapter word totals"
+  )
   assert_true(index.chapter_words(chapters[2]) == 0, "unused chapters contribute zero words")
 
   -- A4: new list fields round-trip as opaque strings (flow maps included).
@@ -1237,7 +1240,14 @@ do
           local got = table.concat(vim.fn.readfile(ftmp .. "/" .. rel), "\n")
           if got ~= want then
             all_ok = false
-            print(("MISMATCH %s in %s\n--- got ---\n%s\n--- want ---\n%s"):format(rel, data.name, got, want))
+            print(
+              ("MISMATCH %s in %s\n--- got ---\n%s\n--- want ---\n%s"):format(
+                rel,
+                data.name,
+                got,
+                want
+              )
+            )
           end
         end
         assert_true(all_ok, ("fixture %s lands byte-exact (%d ops)"):format(data.name, applied))
@@ -1336,11 +1346,20 @@ do
       primary_row = r
     end
   end
-  assert_true(secondary_row ~= nil and secondary_row.timeline_value == "Dawn", "also placement renders as a secondary row with its own coordinate")
+  assert_true(
+    secondary_row ~= nil and secondary_row.timeline_value == "Dawn",
+    "also placement renders as a secondary row with its own coordinate"
+  )
   assert_true(primary_row ~= nil and primary_row.title == "Second", "declared scene rides its axis")
-  assert_true(secondary_row.timeline_rank == 1 and primary_row.timeline_numeric == 1, "ranks and numerics coexist on one axis")
+  assert_true(
+    secondary_row.timeline_rank == 1 and primary_row.timeline_numeric == 1,
+    "ranks and numerics coexist on one axis"
+  )
   local axes = index.timeline_axes(hprj)
-  assert_true(#axes == 2 and axes[1].name == "main" and axes[2].name == "Past", "axes list main first then cards")
+  assert_true(
+    #axes == 2 and axes[1].name == "main" and axes[2].name == "Past",
+    "axes list main first then cards"
+  )
   assert_true(axes[2].unit == "lamps" and #axes[2].order == 2, "axis card order/unit surface")
 
   -- Timeline projection sheet: secondary rows carry the read-only marker.
@@ -1355,7 +1374,10 @@ do
       marked[#marked + 1] = rec
     end
   end
-  assert_true(#marked == 1 and marked[1].day_cell == "Dawn", "parse strips the * marker but keeps it read-only")
+  assert_true(
+    #marked == 1 and marked[1].day_cell == "Dawn",
+    "parse strips the * marker but keeps it read-only"
+  )
   local ops_none = tl.diff(tl.parse(sheet.lines), tl.parse(sheet.lines))
   assert_true(#ops_none == 0, "unchanged sheet diffs to nothing")
   local refused = nil
@@ -1372,9 +1394,15 @@ do
   local lane = lanes[1]
   assert_true(#lane.stages == 3, "lane carries declared stages")
   assert_true(#lane.scenes == 2, "attached scenes join the lane via any alias")
-  assert_true(lane.scenes[1].stage == "trials" and lane.scenes[1].regression == false, "first attachment never regresses")
+  assert_true(
+    lane.scenes[1].stage == "trials" and lane.scenes[1].regression == false,
+    "first attachment never regresses"
+  )
   assert_true(lane.scenes[2].regression == true, "departure after trials flags a stage regression")
-  assert_true(#lane.uncovered == 1 and lane.uncovered[1] == "return", "only the unreached stage is uncovered")
+  assert_true(
+    #lane.uncovered == 1 and lane.uncovered[1] == "return",
+    "only the unreached stage is uncovered"
+  )
 
   -- Health gates: regression + uncovered stage + orphan plotline.
   local kinds = {}
@@ -1431,8 +1459,19 @@ do
   local schema_mod = require("storyteller.schema")
   local old_types = schema_mod.reference_types
   schema_mod.reference_types = {
-    characters = { dir = "characters", label = "Character", field = "characters", body = { "Notes" } },
-    locations = { dir = "locations", label = "Location", field = "locations", body = { "Notes", "History" }, style = "headings" },
+    characters = {
+      dir = "characters",
+      label = "Character",
+      field = "characters",
+      body = { "Notes" },
+    },
+    locations = {
+      dir = "locations",
+      label = "Location",
+      field = "locations",
+      body = { "Notes", "History" },
+      style = "headings",
+    },
   }
   local heading_card = table.concat(capture.card_lines("locations", "Ithaca"), "\n")
   schema_mod.reference_types = old_types
@@ -1447,13 +1486,32 @@ do
     description = "A departure and an abyss.",
     structure = { { children = { { title = "Call" }, { title = "Abyss" } } } },
   })
-  assert_true(card_path ~= nil and card_path:find("references/plotlines", 1, true) ~= nil, "template plants a plotline card")
+  assert_true(
+    card_path ~= nil and card_path:find("references/plotlines", 1, true) ~= nil,
+    "template plants a plotline card"
+  )
   local card_doc = meta.chapter(card_path)
-  assert_true(card_doc.meta.stages[1] == "Call" and card_doc.meta.stages[2] == "Abyss", "stages sequence mirrors the beats")
-  assert_true(templates.plotline_card(hprj, { id = "Quest", name = "The Quest", structure = { { children = { { title = "Call" } } } } }) == nil, "existing card is never overwritten")
+  assert_true(
+    card_doc.meta.stages[1] == "Call" and card_doc.meta.stages[2] == "Abyss",
+    "stages sequence mirrors the beats"
+  )
+  assert_true(
+    templates.plotline_card(
+      hprj,
+      { id = "Quest", name = "The Quest", structure = { { children = { { title = "Call" } } } } }
+    ) == nil,
+    "existing card is never overwritten"
+  )
 
   vim.fn.delete(stmp, "rf")
 end
+
+-- TUI-first overview option is surfaced through config and defaults off.
+local tconfig = require("storyteller.config")
+assert_true(tconfig.get().tui_first == false, "tui_first defaults to false")
+require("storyteller").setup({ tui_first = true })
+assert_true(tconfig.get().tui_first == true, "setup overrides tui_first")
+require("storyteller").setup({ tui_first = false })
 
 print(("RESULT: %d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

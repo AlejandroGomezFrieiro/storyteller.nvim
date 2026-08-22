@@ -93,7 +93,8 @@ pub struct Project {
 }
 
 fn is_excluded(rel: &str) -> bool {
-    rel.split('/').any(|part| part.starts_with('_') || part.starts_with('.'))
+    rel.split('/')
+        .any(|part| part.starts_with('_') || part.starts_with('.'))
 }
 
 fn count_prose(line: &str, in_fence: &mut bool) -> usize {
@@ -115,7 +116,10 @@ fn count_prose(line: &str, in_fence: &mut bool) -> usize {
 fn scene_field(block: &[&str], key: &str) -> Option<String> {
     block.iter().find_map(|l| {
         let (k, v) = l.split_once(':')?;
-        k.trim().eq_ignore_ascii_case(key).then(|| v.trim().to_string()).filter(|s| !s.is_empty())
+        k.trim()
+            .eq_ignore_ascii_case(key)
+            .then(|| v.trim().to_string())
+            .filter(|s| !s.is_empty())
     })
 }
 
@@ -192,17 +196,27 @@ fn parse_scene_extras(block: &[&str]) -> Extras {
 /// Frontmatter of a card as top-level key → scalar-or-list items.
 fn card_meta(path: &Path) -> std::collections::HashMap<String, Vec<String>> {
     let mut out = std::collections::HashMap::new();
-    let Ok(text) = fs::read_to_string(path) else { return out };
+    let Ok(text) = fs::read_to_string(path) else {
+        return out;
+    };
     let lines: Vec<&str> = text.lines().collect();
     if lines.first().copied() != Some("---") {
         return out;
     }
-    let Some(close) = lines.iter().skip(1).position(|l| l.trim() == "---").map(|p| p + 1) else {
+    let Some(close) = lines
+        .iter()
+        .skip(1)
+        .position(|l| l.trim() == "---")
+        .map(|p| p + 1)
+    else {
         return out;
     };
     let mut i = 1;
     while i < close {
-        let Some((k, v)) = lines[i].split_once(':') else { i += 1; continue };
+        let Some((k, v)) = lines[i].split_once(':') else {
+            i += 1;
+            continue;
+        };
         let key = k.trim().to_string();
         if v.trim().is_empty() {
             let mut items = Vec::new();
@@ -228,14 +242,23 @@ fn card_name(path: &Path, meta: &std::collections::HashMap<String, Vec<String>>)
     if let Ok(text) = fs::read_to_string(path) {
         for line in text.lines().take(16) {
             if let Some(h) = line.strip_prefix("# ").or_else(|| line.strip_prefix("## ")) {
-                return h.split(['—', '–', ':']).next().unwrap_or(h).trim().to_string();
+                return h
+                    .split(['—', '–', ':'])
+                    .next()
+                    .unwrap_or(h)
+                    .trim()
+                    .to_string();
             }
         }
     }
     // Fall back to the declared alias set, then the file stem.
     meta.get("names")
         .and_then(|n| n.first().cloned())
-        .unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default())
+        .unwrap_or_else(|| {
+            path.file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default()
+        })
 }
 
 fn load_tracks(root: &Path) -> Vec<Track> {
@@ -244,17 +267,18 @@ fn load_tracks(root: &Path) -> Vec<Track> {
         let meta = card_meta(&p);
         let stages = meta.get("stages").cloned().unwrap_or_default();
         let arc_of = meta.get("relations").and_then(|rels| {
-            rels.iter()
-                .filter(|r| r.contains("arc_of"))
-                .find_map(|r| {
-                    // The arc target is the edge's `to:` — flow map or pair.
-                    let inner =
-                        r.trim().strip_prefix('{').and_then(|s| s.strip_suffix('}')).unwrap_or(r);
-                    inner.split(',').find_map(|part| {
-                        let (k, v) = part.split_once(':')?;
-                        (k.trim() == "to").then(|| v.trim().to_string())
-                    })
+            rels.iter().filter(|r| r.contains("arc_of")).find_map(|r| {
+                // The arc target is the edge's `to:` — flow map or pair.
+                let inner = r
+                    .trim()
+                    .strip_prefix('{')
+                    .and_then(|s| s.strip_suffix('}'))
+                    .unwrap_or(r);
+                inner.split(',').find_map(|part| {
+                    let (k, v) = part.split_once(':')?;
+                    (k.trim() == "to").then(|| v.trim().to_string())
                 })
+            })
         });
         out.push(Track {
             name: card_name(&p, &meta),
@@ -289,16 +313,24 @@ fn parse_edge(item: &str) -> Option<Edge> {
         return None;
     }
     if k.trim() == "to" {
-        Some(Edge { to: target, kind: "related".into() })
+        Some(Edge {
+            to: target,
+            kind: "related".into(),
+        })
     } else {
-        Some(Edge { to: target, kind: k.trim().to_string() })
+        Some(Edge {
+            to: target,
+            kind: k.trim().to_string(),
+        })
     }
 }
 
 /// All reference cards with prose mention counts over the given chapters.
 fn load_cards(root: &Path, chapter_texts: &[(PathBuf, String)]) -> Vec<Card> {
     let refs_dir = root.join("references");
-    let Ok(dirs) = fs::read_dir(&refs_dir) else { return Vec::new() };
+    let Ok(dirs) = fs::read_dir(&refs_dir) else {
+        return Vec::new();
+    };
     let mut cards = Vec::new();
     for entry in dirs.flatten() {
         let rtype = entry.file_name().to_string_lossy().to_string();
@@ -399,7 +431,9 @@ fn list_md(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
-fn parse_scene_block(block: &[&str]) -> (Option<String>, Option<String>, Option<String>, Option<i64>) {
+fn parse_scene_block(
+    block: &[&str],
+) -> (Option<String>, Option<String>, Option<String>, Option<i64>) {
     // Coordinate precedence matches the standard: `at` › `day` › `time`.
     let coord = ["at", "day", "time"]
         .iter()
@@ -432,14 +466,21 @@ fn finalize_scene(mut sc: Scene, block: &[&str]) -> Scene {
 }
 
 pub fn load(root: &Path) -> Result<Project> {
-    let mut prj = Project { root: root.to_path_buf(), ..Default::default() };
+    let mut prj = Project {
+        root: root.to_path_buf(),
+        ..Default::default()
+    };
     let mut chapter_texts: Vec<(PathBuf, String)> = Vec::new();
     for file in list_md(&root.join("chapters"))? {
         let text = fs::read_to_string(&file)?;
         chapter_texts.push((file.clone(), text.clone()));
         let lines: Vec<&str> = text.lines().collect();
         let mut chapter = Chapter {
-            title: file.file_stem().unwrap_or_default().to_string_lossy().to_string(),
+            title: file
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
             file: file.clone(),
             words: 0,
             target: None,
@@ -469,7 +510,9 @@ pub fn load(root: &Path) -> Result<Project> {
                     }
                 }
             }
-            if line.starts_with("# ") && chapter.title == file.file_stem().unwrap_or_default().to_string_lossy() {
+            if line.starts_with("# ")
+                && chapter.title == file.file_stem().unwrap_or_default().to_string_lossy()
+            {
                 chapter.title = line[2..].trim().to_string();
             }
             if let Some(title) = line.strip_prefix("## ") {
@@ -532,7 +575,7 @@ pub fn load(root: &Path) -> Result<Project> {
 #[derive(Debug, Clone, Default)]
 pub struct Thread {
     pub key: String,
-    pub setup: Vec<usize>,  // scene indices
+    pub setup: Vec<usize>, // scene indices
     pub payoff: Vec<usize>,
 }
 
@@ -541,12 +584,16 @@ impl Project {
     /// Keys group case-insensitively (mirrors index.plot_threads).
     pub fn threads(&self) -> Vec<Thread> {
         let mut map: std::collections::BTreeMap<String, Thread> = std::collections::BTreeMap::new();
-        let mut display: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut display: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
         for (i, sc) in self.scenes.iter().enumerate() {
             for (keys, is_setup) in [(&sc.setup, true), (&sc.payoff, false)] {
                 for key in keys {
                     let k = key.to_lowercase();
-                    let name = display.entry(k.clone()).or_insert_with(|| key.clone()).clone();
+                    let name = display
+                        .entry(k.clone())
+                        .or_insert_with(|| key.clone())
+                        .clone();
                     let t = map.entry(k).or_default();
                     t.key = name;
                     if is_setup {
@@ -602,7 +649,9 @@ mod tests {
         assert_eq!(prj.scenes[0].words, 5);
         assert_eq!(prj.scenes[1].status.as_deref(), Some("done"));
         // Unscheduled scenes sort after scheduled ones in story order.
-        let axes = storyteller_core::axes::Axes { by_name: std::collections::HashMap::new() };
+        let axes = storyteller_core::axes::Axes {
+            by_name: std::collections::HashMap::new(),
+        };
         let ctx = crate::ui::TlCtx {
             axes: &axes,
             axis: "main",
@@ -688,7 +737,10 @@ mod tests {
 
         assert_eq!(prj.tracks.len(), 1);
         assert_eq!(prj.tracks[0].name, "Telemachy");
-        assert_eq!(prj.tracks[0].stages, vec!["helpless".to_string(), "companion".to_string()]);
+        assert_eq!(
+            prj.tracks[0].stages,
+            vec!["helpless".to_string(), "companion".to_string()]
+        );
         assert_eq!(prj.tracks[0].arc_of.as_deref(), Some("Telemachus"));
 
         fs::remove_dir_all(&dir).ok();

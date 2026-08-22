@@ -46,6 +46,12 @@
         inherit version;
         src = ./tui;
         cargoLock.lockFile = ./tui/Cargo.lock;
+        # The Cargo.lock vendors a git dependency (storyteller-core from the
+        # standard repo); nix needs its source hash to build the package.
+        cargoLock.outputHashes = {
+          "storyteller-core-0.2.0" =
+            "sha256-4Y1NvtQDwY5b7uA1luVRVOxLlkBStpJT6ttHhIPfjns=";
+        };
         meta.mainProgram = "storyteller-tui";
       };
 
@@ -83,6 +89,11 @@
         packages = [
           pkgs.neovim
           pkgs.vhs
+          # Rust toolchain for tui/src (cargo build/test, rustfmt, clippy).
+          pkgs.cargo
+          pkgs.rustc
+          pkgs.rustfmt
+          pkgs.clippy
           # Optional UI dependency; the plugin falls back without it.
           pkgs.vimPlugins.nui-nvim
           # The language server, from the storyteller standard repo.

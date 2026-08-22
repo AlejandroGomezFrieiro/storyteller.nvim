@@ -21,9 +21,9 @@ Enter
 Sleep 3s
 # Five tabs, one grammar: Tab cycles Dashboard → Corkboard → Timeline →
 # Plotlines → Relations; j/k moves within a view.
-Type "Tab"
+Tab
 Sleep 1500ms
-Type "Tab"
+Tab
 Sleep 2000ms
 # Timeline: t cycles axes, o flips reading/story order, h/l retimes.
 Type "t"
@@ -31,7 +31,7 @@ Sleep 800ms
 Type "o"
 Sleep 1500ms
 # Plotlines: lanes with stage pills; v switches modes, p the read-only grid.
-Type "Tab"
+Tab
 Sleep 2000ms
 Type "p"
 Sleep 1200ms

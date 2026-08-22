@@ -24,6 +24,11 @@ local DEFAULTS = {
   tui_theme = nil,
   -- Glyph tier: "safe" (default) or "nerd" once nerd tables ship.
   tui_glyphs = nil,
+  -- Prefer the embedded TUI cockpit as the dashboard overview: `:Story`
+  -- launches the terminal cockpit instead of the buffer dashboard when the
+  -- `storyteller-tui` binary is available. The buffer dashboard stays
+  -- reachable via `:Story dashboard`. Defaults to false (buffer dashboard).
+  tui_first = false,
   -- Heatmap window width in weeks for the tracking dashboard.
   heatmap_weeks = 30,
   -- Binaries (optional). Probed lazily on first use; override to pin a path.

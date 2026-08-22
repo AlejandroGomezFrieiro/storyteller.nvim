@@ -244,17 +244,19 @@ implementations to the same behavior.
 ## The TUI
 
 `storyteller-tui` (in [`tui/`](tui/)) is a keyboard-first ratatui companion:
-five tabs — Dashboard with per-chapter progress bars, Corkboard, Timeline
-(axis-aware, with retiming), Plotlines lanes/threads, and a Relations graph —
-plus staged edits: mark changes anywhere (`a` attach, `i` stage, `x` remove,
-`s` swap, `h/l` retime), review the pending count in the footer, and apply
-them all atomically with `S` (`u` drops). `<CR>` opens the focused item in
-`$EDITOR`. Mouse scroll/click are optional aliases. Build it with the flake
-(`.#storyteller-tui`) or `cargo build` inside `tui/`. Theming: five presets
-(`dark`, `light`, `midnight`, `forest`, `contrast`) with automatic truecolor →
-16-color degradation and three glyph tiers (`--glyphs safe|ascii|nerd`) — see
-[`tui/README.md`](tui/README.md). `:Story tui` follows your editor's
-background; override with the `tui_theme`/`tui_glyphs` options.
+a Dashboard cockpit (overall manuscript gauge, a navigable chapter binder, and
+a word-flow sparkline), plus Corkboard, Timeline (axis-aware, with retiming),
+Plotlines lanes/threads, and a Relations graph — all under one semantic theme.
+`?` overlays the key grammar for the current view. Staged edits: mark changes
+anywhere (`a` attach, `i` stage, `x` remove, `s` swap, `h/l` retime), review
+the pending count in the footer, and apply them atomically with `S` (`u`
+drops). `<CR>` opens the focused item in `$EDITOR`. Mouse scroll/click are
+optional aliases. Build it with the flake (`.#storyteller-tui`) or `cargo build`
+inside `tui/`. Theming: five presets (`dark`, `light`, `midnight`, `forest`,
+`contrast`) with automatic truecolor → 16-color degradation and three glyph
+tiers (`--glyphs safe|ascii|nerd`) — see [`tui/README.md`](tui/README.md).
+`:Story tui` follows your editor's background; override with the
+`tui_theme`/`tui_glyphs` options.
 
 ## Configuration
 
@@ -264,11 +266,17 @@ The defaults are intentionally useful:
 require("storyteller").setup({
   picker = "auto",          -- "auto" | "telescope" | "fzf"
   tui_bin = "storyteller-tui", -- the cockpit binary for :Story tui
+  tui_first = false,        -- :Story opens the embedded TUI cockpit instead of the dashboard
   detect_on_save = true,
   detect_debounce = 300,
   heatmap_weeks = 30,
 })
 ```
+
+`tui_first` makes the default `:Story` launch the full `storyteller-tui`
+cockpit in a terminal buffer (when the binary is available) — the cockpit is
+the preferred overview. The buffer dashboard stays one keystroke away
+(`:Story dashboard`) and exposes its own `[T]` TUI cockpit action.
 
 For project vocabulary, custom fields, reference types, and diagnostics, see
 the [schema reference](docs/schema.md).

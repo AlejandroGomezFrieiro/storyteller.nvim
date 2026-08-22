@@ -277,8 +277,7 @@ impl Theme {
                     ((hex >> 8) & 0xff) as u8,
                     (hex & 0xff) as u8,
                 );
-                colors[slot as usize] =
-                    profile.adapt_color(rgb).unwrap_or(Color::Reset);
+                colors[slot as usize] = profile.adapt_color(rgb).unwrap_or(Color::Reset);
             }
         }
 
@@ -363,6 +362,11 @@ impl Theme {
     }
 
     pub fn accent_plain(&self) -> Style {
+        self.styled(Slot::Accent, Modifier::empty())
+    }
+
+    /// Gauge/Sparkline fill color: the accent hue, un-bolded.
+    pub fn gauge(&self) -> Style {
         self.styled(Slot::Accent, Modifier::empty())
     }
 

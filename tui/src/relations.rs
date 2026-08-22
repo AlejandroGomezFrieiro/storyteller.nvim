@@ -53,7 +53,8 @@ impl Graph {
     pub fn build(cards: &[Card]) -> Graph {
         let mut graph = Graph::default();
         let mut idx_of: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-        let mut ghost_of: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut ghost_of: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
 
         for card in cards {
             // Timeline cards participate through sync anchors, not the
@@ -100,7 +101,11 @@ impl Graph {
                         }
                     },
                 };
-                graph.edges.push(GraphEdge { from, to, kind: edge.kind.clone() });
+                graph.edges.push(GraphEdge {
+                    from,
+                    to,
+                    kind: edge.kind.clone(),
+                });
             }
         }
         graph.layout();
@@ -123,10 +128,7 @@ impl Graph {
             for (i, pos) in self.positions.iter_mut().enumerate() {
                 let angle =
                     (i as f64) / (n as f64) * std::f64::consts::TAU - std::f64::consts::FRAC_PI_2;
-                *pos = (
-                    0.5 + 0.42 * angle.cos(),
-                    0.5 + 0.42 * SQUASH * angle.sin(),
-                );
+                *pos = (0.5 + 0.42 * angle.cos(), 0.5 + 0.42 * SQUASH * angle.sin());
             }
             return;
         }

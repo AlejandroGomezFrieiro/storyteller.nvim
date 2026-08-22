@@ -462,6 +462,14 @@ function M.dispatch(prj, args, opts)
   if prj and prj.root then
     schema.load(prj.root)
   end
+  -- TUI-first: the default `:Story` opens the embedded cockpit when the
+  -- binary is present and `tui_first` is set (docs/tui-visual-plan.md §10).
+  if name == "dashboard" and require("storyteller.config").get().tui_first then
+    local bin = require("storyteller.config").bin("tui_bin")
+    if bin then
+      return HANDLERS.tui(prj)
+    end
+  end
   local handler = HANDLERS[name]
   if not handler then
     vim.notify(("[storyteller] Unknown command: %s"):format(tostring(name)), vim.log.levels.ERROR)

@@ -14,6 +14,25 @@ local function footer(text)
   return { text = "  " .. text, hl = "StorytellerMuted" }
 end
 
+local PARTIAL = { " ", "▏", "▎", "▍", "▌", "▋", "▊", "▉" }
+
+local function bar(pct, width)
+  pct = math.max(0, math.min(100, pct or 0))
+  width = width or 20
+  local units = math.floor(pct / 100 * width * 8 + 0.5)
+  local full = math.floor(units / 8)
+  local part = units % 8
+  local out = string.rep("█", full)
+  if full < width then
+    out = out .. PARTIAL[part + 1] .. string.rep("░", width - full - 1)
+  end
+  return out
+end
+
+local function edit(path)
+  vim.cmd("edit " .. vim.fn.fnameescape(path))
+end
+
 local function action_row(action)
   return {
     segments = {
@@ -40,6 +59,48 @@ function M.open(prj)
       for _, l in ipairs(views.header(prj, "STORYTELLER", "your writing room")) do
         lines[#lines + 1] = l
       end
+
+      -- Chapter binder: a navigable tree mirroring the TUI cockpit. Every
+      -- chapter row opens its file; nested scene rows are read-only context.
+      local chapters = index.chapters(prj)
+      local crows = {}
+      local crow_select = {}
+      for _, ch in ipairs(chapters) do
+        local words = index.chapter_words(ch)
+        local target = ch.target or 0
+        local pct = target > 0 and math.floor(words / target * 100) or 0
+        crows[#crows + 1] = {
+          segments = {
+            { text = string.format("%-24s", ch.title or ch.filename), hl = "StorytellerScene" },
+            { text = string.format("%6d w  ", words), hl = "StorytellerMuted" },
+            { text = bar(pct, 16), hl = "StorytellerBar" },
+            { text = string.format(" %3d%%", pct), hl = "StorytellerMuted" },
+          },
+        }
+        crow_select[#crow_select + 1] = ch
+        for _, sc in ipairs(ch.scenes or {}) do
+          local status = sc.meta and sc.meta.status or "outline"
+          crows[#crows + 1] = {
+            segments = {
+              { text = "     ·  ", hl = "StorytellerDivider" },
+              { text = sc.title or "(untitled)", hl = ui.status_hl(status) or "StorytellerScene" },
+            },
+          }
+          crow_select[#crow_select + 1] = nil
+        end
+      end
+      if #crows > 0 then
+        local cpanel = ui.grid_panels({ { title = "CHAPTERS", rows = crows } })
+        local coff = #lines
+        for _, l in ipairs(cpanel) do
+          lines[#lines + 1] = l
+        end
+        for j = 1, #crows do
+          select[coff + 1 + j] = crow_select[j]
+        end
+        lines[#lines + 1] = { text = "", hl = nil }
+      end
+
       for _, l in ipairs(views.stats_table(prj)) do
         lines[#lines + 1] = l
       end
@@ -63,7 +124,31 @@ function M.open(prj)
         })
       end
 
+      local function open_tui()
+        require("storyteller.commands").dispatch(prj, { "tui" })
+      end
+
       local groups = {
+        {
+          title = "COCKPIT",
+          actions = {
+            {
+              key = "T",
+              name = "TUI cockpit",
+              run = open_tui,
+            },
+            {
+              key = "D",
+              name = "Dashboard views",
+              run = function()
+                vim.notify(
+                  "[storyteller] :Story dashboard · outline · corkboard · timeline",
+                  vim.log.levels.INFO
+                )
+              end,
+            },
+          },
+        },
         {
           title = "WRITE",
           actions = {
@@ -206,7 +291,13 @@ function M.open(prj)
         for _, l in ipairs(panel_lines) do
           lines[#lines + 1] = l
         end
-        for r = 1, #groups[1].actions do
+        -- Hit-test every row across the tallest column (groups may differ in
+        -- width); shorter columns return nil for their missing rows.
+        local max_actions = 0
+        for _, g in ipairs(groups) do
+          max_actions = math.max(max_actions, #g.actions)
+        end
+        for r = 1, max_actions do
           select[offset + 1 + r] = function(col)
             local c = col + 1
             for i, b in ipairs(bounds) do
@@ -227,7 +318,7 @@ function M.open(prj)
         lines[#lines + 1] = l
       end
       lines[#lines + 1] = { text = "", hl = nil }
-      lines[#lines + 1] = footer("<CR> open   R refresh   q close")
+      lines[#lines + 1] = footer("<CR> open   T TUI cockpit   R refresh   q close")
 
       return { lines = lines, select = select }
     end,
@@ -238,8 +329,23 @@ function M.open(prj)
         if action then
           action.run()
         end
+        return
+      end
+      if data and data.path then
+        edit(data.path)
       end
     end,
+    keys = {
+      ["T"] = function()
+        require("storyteller.commands").dispatch(prj, { "tui" })
+      end,
+      ["?"] = function()
+        vim.notify(
+          "[storyteller] :Story opens views · T runs the TUI cockpit · <leader>s lists the rest",
+          vim.log.levels.INFO
+        )
+      end,
+    },
   })
 end
 

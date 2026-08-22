@@ -147,9 +147,7 @@ function M.diff(old_recs, new_recs)
     local new_day = nr.day_cell
     if old_day ~= new_day and orr.secondary then
       return nil,
-        ("%s is an also: placement — edit it in the scene YAML, not this sheet"):format(
-          nr.title
-        )
+        ("%s is an also: placement — edit it in the scene YAML, not this sheet"):format(nr.title)
     end
     if old_day ~= new_day then
       local value = nil

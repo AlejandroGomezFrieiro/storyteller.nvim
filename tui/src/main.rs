@@ -67,9 +67,8 @@ fn parse_args() -> Result<Args> {
         theme,
         background,
         glyphs,
-        path: path.unwrap_or_else(|| {
-            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-        }),
+        path: path
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
     })
 }
 
@@ -96,23 +95,25 @@ fn main() -> Result<()> {
 
     let backend = CrosstermBackend::new(std::io::stdout());
     let mut terminal = Terminal::new(backend)?;
-    execute!(
-        stdout(),
-        event::EnableMouseCapture,
-        EnterAlternateScreen
-    )?;
+    // Raw mode is required, not optional: without it the terminal stays in
+    // canonical (line-buffered, echo-on) mode and keys are echoed to the
+    // screen instead of arriving as events — so Tab never cycles a view.
+    crossterm::terminal::enable_raw_mode()?;
+    execute!(stdout(), event::EnableMouseCapture, EnterAlternateScreen)?;
     terminal.hide_cursor()?;
 
     let mut tab = Tab::Dashboard;
     let mut list_state = ratatui::widgets::ListState::default();
     let mut hud_message: Option<String> = None;
+    let mut show_help = false;
     let mut rel = ui::RelState::default();
     let mut pl = ui::PlState::default();
     let mut quit = false;
 
     while !quit {
         // Relations view model (rebuilt per frame; card sets are small).
-        let rel_view = relations::RelView::build(&prj.cards, rel.filter.as_deref(), rel.hide_orphans);
+        let rel_view =
+            relations::RelView::build(&prj.cards, rel.filter.as_deref(), rel.hide_orphans);
         if rel.pane == ui::Pane::Inspector {
             let node_i = rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
             let edges = rel_view.graph.edges_of(node_i).len();
@@ -161,12 +162,23 @@ fn main() -> Result<()> {
         let hud = ui::Hud {
             pending: store.pending(),
             message: hud_message.as_deref().or(prompt_msg.as_deref()),
+            show_help,
         };
         terminal.draw(|f| {
             let ctx_ref = (tab == Tab::Timeline).then_some(&tl_ctx);
             let rel_ref = (tab == Tab::Relations).then_some((&rel, &rel_view));
             let pl_ref = (tab == Tab::Plotlines).then_some((&pl, &pl_rows[..]));
-            ui::render(f, &prj, &tab, &mut list_state, &theme, &hud, ctx_ref, rel_ref, pl_ref)
+            ui::render(
+                f,
+                &prj,
+                &tab,
+                &mut list_state,
+                &theme,
+                &hud,
+                ctx_ref,
+                rel_ref,
+                pl_ref,
+            )
         })?;
         match event::read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
@@ -187,8 +199,7 @@ fn main() -> Result<()> {
                                             scene: sc.clone(),
                                             coord: Some(text),
                                         });
-                                        hud_message =
-                                            Some("staged coordinate — S to apply".into());
+                                        hud_message = Some("staged coordinate — S to apply".into());
                                     }
                                 }
                                 PromptKind::Placement => {
@@ -199,9 +210,8 @@ fn main() -> Result<()> {
                                                 axis: axis.trim().to_string(),
                                                 coord: coord.trim().to_string(),
                                             });
-                                            hud_message = Some(
-                                                "staged placement — S to apply".into(),
-                                            );
+                                            hud_message =
+                                                Some("staged placement — S to apply".into());
                                         }
                                     } else {
                                         hud_message =
@@ -251,12 +261,10 @@ fn main() -> Result<()> {
                                             scene: sc,
                                             name: lane,
                                         });
-                                        hud_message =
-                                            Some("staged attach — S to apply".into());
+                                        hud_message = Some("staged attach — S to apply".into());
                                     }
                                     None => {
-                                        hud_message =
-                                            Some(format!("no scene titled “{text}”"));
+                                        hud_message = Some(format!("no scene titled “{text}”"));
                                     }
                                 },
                                 PromptKind::ThreadAttach { side, key } => {
@@ -267,13 +275,11 @@ fn main() -> Result<()> {
                                                 side,
                                                 key,
                                             });
-                                            hud_message = Some(
-                                                "staged thread attach — S to apply".into(),
-                                            );
+                                            hud_message =
+                                                Some("staged thread attach — S to apply".into());
                                         }
                                         None => {
-                                            hud_message =
-                                                Some(format!("no scene titled “{text}”"));
+                                            hud_message = Some(format!("no scene titled “{text}”"));
                                         }
                                     }
                                 }
@@ -298,6 +304,14 @@ fn main() -> Result<()> {
                     KeyCode::Char('q') => quit = true,
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         quit = true
+                    }
+                    // `?` toggles the grammar-help overlay; Esc closes it
+                    // before falling through to any other Esc action.
+                    KeyCode::Char('?') => {
+                        show_help = !show_help;
+                    }
+                    KeyCode::Esc if show_help => {
+                        show_help = false;
                     }
                     // Staged-edit verbs (docs/rework-plan.md Phase D):
                     KeyCode::Char('S') => match store.apply() {
@@ -352,29 +366,24 @@ fn main() -> Result<()> {
                         };
                         rel.edge = 0;
                     }
-                    KeyCode::Char('j') | KeyCode::Down if tab == Tab::Relations => {
-                        match rel.pane {
-                            ui::Pane::Graph => {
-                                rel.node = rel_view.clamp(rel.node + 1);
-                            }
-                            ui::Pane::Inspector => {
-                                rel.edge += 1;
-                            }
+                    KeyCode::Char('j') | KeyCode::Down if tab == Tab::Relations => match rel.pane {
+                        ui::Pane::Graph => {
+                            rel.node = rel_view.clamp(rel.node + 1);
                         }
-                    }
-                    KeyCode::Char('k') | KeyCode::Up if tab == Tab::Relations => {
-                        match rel.pane {
-                            ui::Pane::Graph => {
-                                rel.node = rel.node.saturating_sub(1);
-                            }
-                            ui::Pane::Inspector => {
-                                rel.edge = rel.edge.saturating_sub(1);
-                            }
+                        ui::Pane::Inspector => {
+                            rel.edge += 1;
                         }
-                    }
+                    },
+                    KeyCode::Char('k') | KeyCode::Up if tab == Tab::Relations => match rel.pane {
+                        ui::Pane::Graph => {
+                            rel.node = rel.node.saturating_sub(1);
+                        }
+                        ui::Pane::Inspector => {
+                            rel.edge = rel.edge.saturating_sub(1);
+                        }
+                    },
                     KeyCode::Char('h') if tab == Tab::Relations && rel.pane == ui::Pane::Graph => {
-                        let node_i =
-                            rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
+                        let node_i = rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
                         let next = rel_view.graph.step_dir(node_i, crate::relations::Dir::Left);
                         rel.node = rel_view
                             .order_visible()
@@ -383,9 +392,10 @@ fn main() -> Result<()> {
                             .unwrap_or(rel.node);
                     }
                     KeyCode::Char('l') if tab == Tab::Relations && rel.pane == ui::Pane::Graph => {
-                        let node_i =
-                            rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
-                        let next = rel_view.graph.step_dir(node_i, crate::relations::Dir::Right);
+                        let node_i = rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
+                        let next = rel_view
+                            .graph
+                            .step_dir(node_i, crate::relations::Dir::Right);
                         rel.node = rel_view
                             .order_visible()
                             .iter()
@@ -399,15 +409,16 @@ fn main() -> Result<()> {
                         rel.hide_orphans = !rel.hide_orphans;
                         rel.node = 0;
                     }
-                    KeyCode::Char('a')
-                        if tab == Tab::Relations && rel.pane == ui::Pane::Graph =>
-                    {
-                        let node_i =
-                            rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
+                    KeyCode::Char('a') if tab == Tab::Relations && rel.pane == ui::Pane::Graph => {
+                        let node_i = rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
                         if let Some(node) = rel_view.graph.nodes.get(node_i) {
-                            if let (Some(file), Some(line)) = (&node.file, Some(node.heading_line)) {
+                            if let (Some(file), Some(line)) = (&node.file, Some(node.heading_line))
+                            {
                                 prompt = Some((
-                                    PromptKind::EdgeTarget { file: file.clone(), line },
+                                    PromptKind::EdgeTarget {
+                                        file: file.clone(),
+                                        line,
+                                    },
                                     String::new(),
                                 ));
                             } else {
@@ -418,8 +429,7 @@ fn main() -> Result<()> {
                     KeyCode::Char('e') | KeyCode::Char('x')
                         if tab == Tab::Relations && rel.pane == ui::Pane::Inspector =>
                     {
-                        let node_i =
-                            rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
+                        let node_i = rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
                         let edges = rel_view.graph.edges_of(node_i);
                         let Some(&(ei, _)) = edges.get(rel.edge) else {
                             hud_message = Some("no edge selected".into());
@@ -452,14 +462,12 @@ fn main() -> Result<()> {
                                     card,
                                     to: target_name.clone(),
                                 });
-                                hud_message =
-                                    Some("staged edge removal — S to apply".into());
+                                hud_message = Some("staged edge removal — S to apply".into());
                             }
                         }
                     }
                     KeyCode::Enter if tab == Tab::Relations => {
-                        let node_i =
-                            rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
+                        let node_i = rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
                         if let Some(node) = rel_view.graph.nodes.get(node_i) {
                             if let Some(file) = &node.file {
                                 open_in_editor(std::path::Path::new(file), node.heading_line + 1)?;
@@ -488,14 +496,18 @@ fn main() -> Result<()> {
                         match pl_rows.get(list_state.selected().unwrap_or(0)) {
                             Some(ui::PlRow::LaneHeader(t)) => {
                                 prompt = Some((
-                                    PromptKind::PlotAttach { lane: t.name.clone() },
+                                    PromptKind::PlotAttach {
+                                        lane: t.name.clone(),
+                                    },
                                     String::new(),
                                 ));
                             }
                             Some(ui::PlRow::Stage { lane, .. })
                             | Some(ui::PlRow::Ghost { lane, .. }) => {
                                 prompt = Some((
-                                    PromptKind::PlotAttach { lane: lane.name.clone() },
+                                    PromptKind::PlotAttach {
+                                        lane: lane.name.clone(),
+                                    },
                                     String::new(),
                                 ));
                             }
@@ -532,8 +544,7 @@ fn main() -> Result<()> {
                                 ));
                             }
                             _ => {
-                                hud_message =
-                                    Some("i sets the stage of an attached scene".into());
+                                hud_message = Some("i sets the stage of an attached scene".into());
                             }
                         }
                     }
@@ -547,10 +558,11 @@ fn main() -> Result<()> {
                                     },
                                     name: lane.name.clone(),
                                 });
-                                hud_message =
-                                    Some("staged detach — S to apply".into());
+                                hud_message = Some("staged detach — S to apply".into());
                             }
-                            Some(ui::PlRow::ThreadScene { side, key, scene, .. }) => {
+                            Some(ui::PlRow::ThreadScene {
+                                side, key, scene, ..
+                            }) => {
                                 store.stage(store::Op::DetachThread {
                                     scene: store::SceneRef {
                                         file: scene.file.to_string_lossy().to_string(),
@@ -559,18 +571,18 @@ fn main() -> Result<()> {
                                     side: *side,
                                     key: key.clone(),
                                 });
-                                hud_message =
-                                    Some("staged thread detach — S to apply".into());
+                                hud_message = Some("staged thread detach — S to apply".into());
                             }
                             _ => {
-                                hud_message =
-                                    Some("x detaches an attached scene row".into());
+                                hud_message = Some("x detaches an attached scene row".into());
                             }
                         }
                     }
                     KeyCode::Char('1') => tab = Tab::Dashboard,
                     KeyCode::Char('2') => tab = Tab::Corkboard,
                     KeyCode::Char('3') => tab = Tab::Timeline,
+                    KeyCode::Char('4') => tab = Tab::Plotlines,
+                    KeyCode::Char('5') => tab = Tab::Relations,
                     // Timeline-surface verbs (docs/interaction.md, TUI keys):
                     // t axis · o order · w swimlanes · h/l retime · H/L
                     // absolute · d clear · s swap · a placement · x remove.
@@ -591,10 +603,26 @@ fn main() -> Result<()> {
                         tl.swimlane = tl.swimlane.next();
                     }
                     KeyCode::Char('h') if tab == Tab::Timeline => {
-                        tl_retime(&mut store, &mut hud_message, &rows, &list_state, &axis_name, &axes, -1);
+                        tl_retime(
+                            &mut store,
+                            &mut hud_message,
+                            &rows,
+                            &list_state,
+                            &axis_name,
+                            &axes,
+                            -1,
+                        );
                     }
                     KeyCode::Char('l') if tab == Tab::Timeline => {
-                        tl_retime(&mut store, &mut hud_message, &rows, &list_state, &axis_name, &axes, 1);
+                        tl_retime(
+                            &mut store,
+                            &mut hud_message,
+                            &rows,
+                            &list_state,
+                            &axis_name,
+                            &axes,
+                            1,
+                        );
                     }
                     KeyCode::Char('H') if tab == Tab::Timeline => {
                         if focused_scene(&rows, &list_state).is_some() {
@@ -608,7 +636,10 @@ fn main() -> Result<()> {
                     }
                     KeyCode::Char('d') if tab == Tab::Timeline => {
                         if let Some(sc) = focused_scene(&rows, &list_state) {
-                            store.stage(store::Op::SetCoord { scene: sc, coord: None });
+                            store.stage(store::Op::SetCoord {
+                                scene: sc,
+                                coord: None,
+                            });
                             hud_message = Some("staged unschedule — S to apply".into());
                         }
                     }
@@ -652,12 +683,15 @@ fn main() -> Result<()> {
                         } else if tab == Tab::Plotlines {
                             match pl_rows.get(list_state.selected().unwrap_or(0)) {
                                 Some(ui::PlRow::Stage { scene, .. })
-                                | Some(ui::PlRow::ThreadScene { scene, .. }) => Some((
-                                    scene.file.to_string_lossy().to_string(),
-                                    scene.line,
-                                )),
+                                | Some(ui::PlRow::ThreadScene { scene, .. }) => {
+                                    Some((scene.file.to_string_lossy().to_string(), scene.line))
+                                }
                                 _ => None,
                             }
+                        } else if tab == Tab::Dashboard {
+                            prj.chapters
+                                .get(list_state.selected().unwrap_or(0))
+                                .map(|c| (c.file.to_string_lossy().to_string(), 1))
                         } else {
                             prj.scenes
                                 .get(list_state.selected().unwrap_or(0))
@@ -674,22 +708,18 @@ fn main() -> Result<()> {
             Event::Mouse(mouse) => match mouse.kind {
                 MouseEventKind::ScrollDown => list_state.select_next(),
                 MouseEventKind::ScrollUp => list_state.select_previous(),
-                MouseEventKind::Down(_)
-                    if tab != Tab::Dashboard => {
-                        list_state.select(Some(mouse.row.saturating_sub(2) as usize));
-                    }
+                MouseEventKind::Down(_) if tab != Tab::Dashboard => {
+                    list_state.select(Some(mouse.row.saturating_sub(2) as usize));
+                }
                 _ => {}
             },
             _ => {}
         }
     }
 
-    execute!(
-        stdout(),
-        event::DisableMouseCapture,
-        LeaveAlternateScreen
-    )?;
+    execute!(stdout(), event::DisableMouseCapture, LeaveAlternateScreen)?;
     terminal.show_cursor()?;
+    crossterm::terminal::disable_raw_mode()?;
     Ok(())
 }
 
@@ -719,16 +749,35 @@ fn load_axes(path: &std::path::Path) -> storyteller_core::axes::Axes {
 enum PromptKind {
     Coordinate,
     Placement,
-    EdgeTarget { file: String, line: usize },
-    EdgeKind { file: String, line: usize, to: String },
-    RenameKind { file: String, line: usize, to: String },
+    EdgeTarget {
+        file: String,
+        line: usize,
+    },
+    EdgeKind {
+        file: String,
+        line: usize,
+        to: String,
+    },
+    RenameKind {
+        file: String,
+        line: usize,
+        to: String,
+    },
     Filter,
     /// Attach a scene (entered by title) to a plotline lane.
-    PlotAttach { lane: String },
+    PlotAttach {
+        lane: String,
+    },
     /// Attach a scene to one side of a setup/payoff thread.
-    ThreadAttach { side: store::Side, key: String },
+    ThreadAttach {
+        side: store::Side,
+        key: String,
+    },
     /// Set the stage of an already-known scene.
-    StageText { file: String, line: usize },
+    StageText {
+        file: String,
+        line: usize,
+    },
 }
 
 fn find_scene(prj: &project::Project, title: &str) -> Option<store::SceneRef> {
@@ -789,7 +838,9 @@ fn tl_retime(
     axes: &storyteller_core::axes::Axes,
     delta: i64,
 ) {
-    let Some(r) = focused_row(rows, list_state.selected()) else { return };
+    let Some(r) = focused_row(rows, list_state.selected()) else {
+        return;
+    };
     let order = axes.meta(axis_name).order;
     let next = match r.raw.parse::<i64>() {
         Ok(n) => (n + delta).to_string(),
@@ -800,8 +851,7 @@ fn tl_retime(
                 order[nextp].clone()
             }
             None => {
-                *hud_message =
-                    Some(format!("“{}” is not orderable on this axis", r.raw));
+                *hud_message = Some(format!("“{}” is not orderable on this axis", r.raw));
                 return;
             }
         },
@@ -810,7 +860,10 @@ fn tl_retime(
         file: r.scene.file.to_string_lossy().to_string(),
         line: r.scene.line,
     };
-    store.stage(store::Op::SetCoord { scene, coord: Some(next.clone()) });
+    store.stage(store::Op::SetCoord {
+        scene,
+        coord: Some(next.clone()),
+    });
     *hud_message = Some(format!("staged {} → {} — S to apply", r.raw, next));
 }
 
@@ -830,8 +883,7 @@ fn tl_swap(
             )
         })
     };
-    let (Some((file_a, coord_a, line_a)), Some((file_b, coord_b, line_b))) =
-        (pick(from), pick(to))
+    let (Some((file_a, coord_a, line_a)), Some((file_b, coord_b, line_b))) = (pick(from), pick(to))
     else {
         *hud_message = Some("swap needs two scheduled rows".into());
         return;
@@ -845,11 +897,17 @@ fn tl_swap(
         return;
     }
     store.stage(store::Op::SetCoord {
-        scene: store::SceneRef { file: file_a.clone(), line: line_a },
+        scene: store::SceneRef {
+            file: file_a.clone(),
+            line: line_a,
+        },
         coord: Some(coord_b.clone()),
     });
     store.stage(store::Op::SetCoord {
-        scene: store::SceneRef { file: file_b, line: line_b },
+        scene: store::SceneRef {
+            file: file_b,
+            line: line_b,
+        },
         coord: Some(coord_a.clone()),
     });
     *hud_message = Some(format!("staged swap {coord_a} ⇄ {coord_b} — S to apply"));

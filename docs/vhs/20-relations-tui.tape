@@ -28,7 +28,7 @@ Type "l"
 Sleep 800ms
 Type "j"
 Sleep 800ms
-Type "Tab"
+Tab
 Sleep 2000ms
 # a adds an edge (target prompt), x removes one — both staged until S.
 Hide

@@ -5,14 +5,16 @@
 
 use crate::project::Project;
 use crate::theme::{status_glyph, Slot, Theme};
-use unicode_width::UnicodeWidthStr;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, List, ListItem, ListState, Paragraph, Tabs},
+    widgets::{
+        Block, BorderType, Borders, Gauge, List, ListItem, ListState, Paragraph, Sparkline, Tabs,
+    },
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Tab {
@@ -29,6 +31,8 @@ pub enum Tab {
 pub struct Hud<'a> {
     pub pending: usize,
     pub message: Option<&'a str>,
+    /// Draw the `?` grammar-help overlay over the current tab.
+    pub show_help: bool,
 }
 
 const TAB_TITLES: [(&str, &str); 5] = [
@@ -62,7 +66,7 @@ impl Tab {
 
     /// Footer binding table per tab (§5) so hints can never drift from keys.
     fn bindings(&self) -> Vec<(&'static str, &'static str)> {
-        match self {
+        let mut out = match self {
             Tab::Dashboard => vec![
                 ("j/k", "chapters"),
                 ("CR", "open"),
@@ -85,6 +89,7 @@ impl Tab {
                 ("w", "lanes"),
                 ("h/l", "retime"),
                 ("S/u", "staging"),
+                ("q", "quit"),
             ],
             Tab::Plotlines => vec![
                 ("j/k", "rows"),
@@ -94,6 +99,7 @@ impl Tab {
                 ("i", "stage"),
                 ("x", "detach"),
                 ("S/u", "staging"),
+                ("q", "quit"),
             ],
             Tab::Relations => vec![
                 ("Tab", "panes"),
@@ -102,8 +108,11 @@ impl Tab {
                 ("a/e/x", "edges"),
                 ("/", "filter"),
                 ("R", "reload"),
+                ("q", "quit"),
             ],
-        }
+        };
+        out.push(("?", "help"));
+        out
     }
 }
 
@@ -130,7 +139,7 @@ fn project_name(prj: &Project) -> String {
 
 /// Truncate to `width` display columns, appending an ellipsis when cut.
 fn fit(text: &str, width: usize) -> String {
-        let w = text.width();
+    let w = text.width();
     if w <= width {
         return format!("{text:w$}");
     }
@@ -176,19 +185,22 @@ pub fn render(
         .border_type(BorderType::Rounded)
         .border_style(theme.border())
         .title(Line::from(vec![
-            Span::styled(
-                format!(" {} ", theme.glyphs.brand),
-                theme.accent(),
-            ),
+            Span::styled(format!(" {} ", theme.glyphs.brand), theme.accent()),
             Span::styled("storyteller", theme.text_bold()),
-            Span::styled(format!(" · {} · {} scenes", project_name(prj), prj.scenes.len()), theme.dim()),
+            Span::styled(
+                format!(" · {} · {} scenes", project_name(prj), prj.scenes.len()),
+                theme.dim(),
+            ),
         ]));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let [tabs_row, body, footer] =
-        Layout::vertical([Constraint::Length(1), Constraint::Min(0), Constraint::Length(1)])
-            .areas(inner);
+    let [tabs_row, body, footer] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .areas(inner);
 
     let tabs = Tabs::new(TAB_TITLES.iter().enumerate().map(|(i, (n, t))| {
         let icon = theme.glyphs.tabs.get(i).copied().unwrap_or("");
@@ -204,7 +216,7 @@ pub fn render(
     f.render_widget(tabs, tabs_row);
 
     match tab {
-        Tab::Dashboard => dashboard(f, prj, body, theme, class),
+        Tab::Dashboard => dashboard(f, prj, body, list_state, theme, class),
         Tab::Relations => {
             if let Some((state, view)) = rel {
                 relations(f, prj, body, theme, class, state, view);
@@ -268,6 +280,46 @@ pub fn render(
             f.render_widget(Line::from(right), footer);
         }
     }
+
+    if hud.show_help {
+        render_help(f, tab, theme);
+    }
+}
+
+/// The `?` grammar overlay: the active tab's bindings plus the shared verbs,
+/// drawn as a centered popup. Scrolls never apply; the body is read-only.
+fn render_help(f: &mut Frame, tab: &Tab, theme: &Theme) {
+    use tui_popup::Popup;
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(Span::styled("GLOBAL", theme.dim())));
+    for (k, d) in [
+        ("Tab/1..5", "switch view"),
+        ("R", "reload from disk"),
+        ("q", "quit"),
+        ("?", "this help"),
+    ] {
+        lines.push(binding_line(k, d, theme));
+    }
+    lines.push(Line::default());
+    lines.push(Line::from(Span::styled("THIS VIEW", theme.dim())));
+    for (k, d) in tab.bindings() {
+        lines.push(binding_line(k, d, theme));
+    }
+
+    let body = Text::from(lines);
+    let popup = Popup::new(body)
+        .title("storyteller · keys")
+        .border_style(theme.border().add_modifier(Modifier::BOLD))
+        .style(theme.text());
+    f.render_widget(popup, f.area());
+}
+
+fn binding_line(key: &str, desc: &str, theme: &Theme) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("  {key:<6}"), theme.accent()),
+        Span::styled(desc.to_string(), theme.dim()),
+    ])
 }
 
 // --- Dashboard ---------------------------------------------------------------
@@ -276,6 +328,7 @@ fn dashboard(
     f: &mut Frame,
     prj: &Project,
     area: Rect,
+    list_state: &mut ListState,
     theme: &Theme,
     class: WidthClass,
 ) {
@@ -288,67 +341,218 @@ fn dashboard(
         return;
     }
 
-    let totals = Line::from(vec![
-        Span::styled(
-            format!(
-                "{} chapters · {} scenes",
-                prj.chapters.len(),
-                prj.scenes.len()
-            ),
-            theme.dim(),
-        ),
-        Span::raw("  "),
-        Span::styled(
-            format!("{} w total", words_compact(prj.total_words)),
-            theme.text_bold(),
-        ),
+    let total_target: u64 = prj.chapters.iter().map(|c| c.target.unwrap_or(0)).sum();
+    let pct = if total_target > 0 {
+        (prj.total_words as f64 / total_target as f64 * 100.0).min(100.0) as u16
+    } else {
+        0
+    };
+
+    // Header: project name + totals column, then a manuscript gauge (§6.1).
+    let title = Line::from(vec![
+        Span::styled(format!("{} ", theme.glyphs.brand), theme.accent_plain()),
+        Span::styled(project_name(prj), theme.text_bold()),
     ]);
-    let title = Line::from(Span::styled(project_name(prj), theme.text_bold()));
+    let totals = Line::from(vec![Span::styled(
+        format!(
+            "{} chapters · {} scenes · {} w",
+            prj.chapters.len(),
+            prj.scenes.len(),
+            words_compact(prj.total_words)
+        ),
+        theme.dim(),
+    )]);
+    let header = Paragraph::new(vec![title, totals]);
     f.render_widget(
-        Paragraph::new(vec![title, totals]),
-        Rect { height: 2.min(area.height), ..area },
+        header,
+        Rect {
+            height: 2.min(area.height),
+            ..area
+        },
     );
     if area.height <= 2 {
         return;
     }
+    let gauge_row = Rect {
+        y: area.y + 2,
+        height: 1.min(area.height.saturating_sub(2)),
+        ..area
+    };
+    if area.height > 3 {
+        let gauge = Gauge::default()
+            .block(Block::default().borders(Borders::NONE))
+            .gauge_style(theme.gauge())
+            .label(if total_target > 0 {
+                format!(
+                    "manuscript  {}/{}  {}%",
+                    words_compact(prj.total_words),
+                    words_compact(total_target as usize),
+                    pct
+                )
+            } else {
+                format!("manuscript  {} words", words_compact(prj.total_words))
+            })
+            .ratio(pct as f64 / 100.0);
+        f.render_widget(gauge, gauge_row);
+    }
+    let body = Rect {
+        y: area.y + 3,
+        height: area.height.saturating_sub(3),
+        ..area
+    };
+    if body.height == 0 {
+        return;
+    }
 
-    let max_words = prj.chapters.iter().map(|c| c.words).max().unwrap_or(1).max(1);
+    let max_words = prj
+        .chapters
+        .iter()
+        .map(|c| c.words)
+        .max()
+        .unwrap_or(1)
+        .max(1);
     let bar_width = match class {
         WidthClass::Compact => 10,
         WidthClass::Standard => 22,
     };
-    let mut lines = Vec::new();
-    for ch in &prj.chapters {
-        let over = matches!(ch.target, Some(t) if ch.words > t as usize);
-        let ratio = match ch.target {
-            Some(t) if t > 0 => (ch.words as f64 / t as f64).min(1.0),
-            _ => ch.words as f64 / max_words as f64,
-        };
-        let filled = (ratio * bar_width as f64).round() as usize;
-        let fill_style = if over {
-            theme.slot_fg(Slot::Warning)
-        } else {
-            theme.slot_fg(Slot::Accent)
-        };
-        let counts = match ch.target {
-            Some(t) => format!("{}/{}", words_compact(ch.words), words_compact(t as usize)),
-            None => format!("{} w", words_compact(ch.words)),
-        };
-        lines.push(Line::from(vec![
-            Span::styled(fit(&format!(" {}", ch.title), 26), theme.text_bold()),
-            Span::styled(theme.glyphs.fill.repeat(filled), fill_style),
-            Span::styled(theme.glyphs.track.repeat(bar_width - filled), theme.dim()),
-            Span::styled(format!(" {counts}"), theme.dim()),
+
+    // Narrow: single selectable chapter list with inline mini-bars.
+    if class == WidthClass::Compact || area.width < 72 {
+        let items: Vec<ListItem> = prj
+            .chapters
+            .iter()
+            .map(|ch| {
+                let over = matches!(ch.target, Some(t) if ch.words > t as usize);
+                let ratio = match ch.target {
+                    Some(t) if t > 0 => (ch.words as f64 / t as f64).min(1.0),
+                    _ => ch.words as f64 / max_words as f64,
+                };
+                let filled = (ratio * bar_width as f64).round() as usize;
+                let fill_style = if over {
+                    theme.slot_fg(Slot::Warning)
+                } else {
+                    theme.slot_fg(Slot::Accent)
+                };
+                let counts = match ch.target {
+                    Some(t) => format!("{}/{}", words_compact(ch.words), words_compact(t as usize)),
+                    None => format!("{} w", words_compact(ch.words)),
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(fit(&format!(" {}", ch.title), 26), theme.text_bold()),
+                    Span::styled(theme.glyphs.fill.repeat(filled), fill_style),
+                    Span::styled(theme.glyphs.track.repeat(bar_width - filled), theme.dim()),
+                    Span::styled(format!(" {counts}"), theme.dim()),
+                ]))
+            })
+            .collect();
+        let list = List::new(items)
+            .block(Block::default().title(Line::from(Span::styled("CHAPTERS", theme.dim()))))
+            .highlight_symbol(format!("{} ", theme.glyphs.selection))
+            .highlight_style(theme.selection_bg());
+        f.render_stateful_widget(list, body, list_state);
+        return;
+    }
+
+    // Comfortable: nav binder on the left, metrics panel on the right.
+    let [nav, right] = Layout::horizontal([Constraint::Percentage(58), Constraint::Percentage(42)])
+        .spacing(1)
+        .areas(body);
+
+    let nav_items: Vec<ListItem> = prj
+        .chapters
+        .iter()
+        .map(|ch| {
+            let over = matches!(ch.target, Some(t) if ch.words > t as usize);
+            let ratio = match ch.target {
+                Some(t) if t > 0 => (ch.words as f64 / t as f64).min(1.0),
+                _ => ch.words as f64 / max_words as f64,
+            };
+            let filled = (ratio * bar_width as f64).round() as usize;
+            let fill_style = if over {
+                theme.slot_fg(Slot::Warning)
+            } else {
+                theme.slot_fg(Slot::Accent)
+            };
+            let counts = match ch.target {
+                Some(t) => format!("{}/{}", words_compact(ch.words), words_compact(t as usize)),
+                None => format!("{} w", words_compact(ch.words)),
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(fit(&format!(" {}", ch.title), 26), theme.text_bold()),
+                Span::styled(format!(" {:>5} w", words_compact(ch.words)), theme.dim()),
+                Span::styled(theme.glyphs.fill.repeat(filled), fill_style),
+                Span::styled(theme.glyphs.track.repeat(bar_width - filled), theme.dim()),
+                Span::styled(format!(" {counts}"), theme.dim()),
+            ]))
+        })
+        .collect();
+    // Selection maps 1:1 to chapter indices, so <CR> opens the right file.
+    let nav_list = List::new(nav_items)
+        .block(Block::default().title(Line::from(Span::styled("BINDER", theme.dim()))))
+        .highlight_symbol(format!("{} ", theme.glyphs.selection))
+        .highlight_style(theme.selection_bg());
+    // Split the shared selection across chapter rows only (scenes are
+    // read-only children); keep the cursor within the chapter count.
+    let chapter_count = prj.chapters.len();
+    if chapter_count == 0 {
+        f.render_widget(nav_list, nav);
+        return;
+    }
+    list_state.select(Some(
+        list_state.selected().unwrap_or(0).min(chapter_count - 1),
+    ));
+    f.render_stateful_widget(nav_list, nav, list_state);
+
+    // Metrics: scene-status breakdown + word-flow sparkline.
+    let mut metrics = Vec::new();
+    let mut by_status: Vec<(String, usize)> = Vec::new();
+    for sc in &prj.scenes {
+        let status = sc.status.clone().unwrap_or_else(|| "outline".to_string());
+        match by_status.iter_mut().find(|(s, _)| *s == status) {
+            Some((_, n)) => *n += 1,
+            None => by_status.push((status, 1)),
+        }
+    }
+    metrics.push(Line::from(Span::styled(" SCENES", theme.dim())));
+    for (status, n) in &by_status {
+        metrics.push(Line::from(vec![
+            Span::styled(
+                format!(" {}  ", status_glyph(&theme.glyphs, status)),
+                theme.status(status),
+            ),
+            Span::styled(format!("{status:<10}"), theme.status(status)),
+            Span::styled(format!("{n:>4}  "), theme.dim()),
+            Span::styled(theme.glyphs.track.repeat((*n).min(bar_width)), theme.dim()),
         ]));
     }
-    f.render_widget(
-        Paragraph::new(lines),
-        Rect {
-            y: area.y + 2,
-            height: area.height - 2,
-            ..area
-        },
-    );
+    if by_status.is_empty() {
+        metrics.push(Line::from(Span::styled("  (no scenes)", theme.dim())));
+    }
+    metrics.push(Line::default());
+    metrics.push(Line::from(Span::styled(" WORD FLOW", theme.dim())));
+    let spark_data: Vec<u64> = prj.chapters.iter().map(|c| c.words as u64).collect();
+    let sparkles = Sparkline::default()
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme.border())
+                .title(Line::from(Span::styled("WORD FLOW", theme.dim()))),
+        )
+        .style(theme.slot_fg(Slot::Accent))
+        .data(&spark_data);
+    let widget_frame = Block::default()
+        .borders(Borders::ALL)
+        .border_style(theme.border())
+        .title(Line::from(Span::styled("PROJECT", theme.accent())));
+    let inner = widget_frame.inner(right);
+    f.render_widget(widget_frame, right);
+    // Header text sized to its content; the sparkline fills the remainder.
+    let [flow, rest] =
+        Layout::vertical([Constraint::Length(metrics.len() as u16), Constraint::Min(0)])
+            .areas(inner);
+    let header_lines = Paragraph::new(metrics);
+    f.render_widget(header_lines, flow);
+    f.render_widget(sparkles, rest);
 }
 
 fn centered(area: Rect) -> Rect {
@@ -422,7 +626,6 @@ impl Swimlane {
             Swimlane::Chapter => Swimlane::Off,
         }
     }
-
 }
 
 /// Timeline tab state owned by the app (docs/rework-plan.md §E3).
@@ -438,7 +641,12 @@ pub struct TlState {
 
 impl Default for TlState {
     fn default() -> Self {
-        TlState { axis: 0, story_order: true, swimlane: Swimlane::Off, mark: None }
+        TlState {
+            axis: 0,
+            story_order: true,
+            swimlane: Swimlane::Off,
+            mark: None,
+        }
     }
 }
 
@@ -525,7 +733,8 @@ pub fn timeline_rows<'a>(prj: &'a Project, ctx: &TlCtx<'_>) -> Vec<TlRow<'a>> {
         // Secondary placements on this axis.
         for placement in &sc.also {
             if placement.0.eq_ignore_ascii_case(ctx.axis) {
-                let rank = storyteller_core::axes::Coord::parse(&placement.1).rank(&axis_meta.order);
+                let rank =
+                    storyteller_core::axes::Coord::parse(&placement.1).rank(&axis_meta.order);
                 rows.push(TlRow {
                     scene: sc,
                     secondary: Some(placement),
@@ -543,12 +752,17 @@ pub fn timeline_rows<'a>(prj: &'a Project, ctx: &TlCtx<'_>) -> Vec<TlRow<'a>> {
     // Intra-scene sync conflicts: primary projected onto each secondary must
     // land on it (exact anchors/origins only).
     for sc in &prj.scenes {
-        let Some(primary) = scene_coord_raw(sc) else { continue };
+        let Some(primary) = scene_coord_raw(sc) else {
+            continue;
+        };
         let from = sc.axis.as_deref().unwrap_or("main");
         for (bname, bcoord) in &sc.also {
-            if let Some(projected) =
-                storyteller_core::axes::project(ctx.axes, from, &storyteller_core::axes::Coord::parse(&primary), bname)
-            {
+            if let Some(projected) = storyteller_core::axes::project(
+                ctx.axes,
+                from,
+                &storyteller_core::axes::Coord::parse(&primary),
+                bname,
+            ) {
                 if projected.raw() != *bcoord {
                     for r in rows.iter_mut().filter(|r| r.scene.line == sc.line) {
                         r.sync_conflict = true;
@@ -560,7 +774,13 @@ pub fn timeline_rows<'a>(prj: &'a Project, ctx: &TlCtx<'_>) -> Vec<TlRow<'a>> {
 
     // Order.
     if ctx.story_order {
-        rows.sort_by_key(|r| (r.rank.unwrap_or(i64::MAX), r.scene.line, r.secondary.is_some()));
+        rows.sort_by_key(|r| {
+            (
+                r.rank.unwrap_or(i64::MAX),
+                r.scene.line,
+                r.secondary.is_some(),
+            )
+        });
     }
 
     // Local regression + overlap among linear-mode placements, in the
@@ -609,10 +829,7 @@ pub fn timeline_rows<'a>(prj: &'a Project, ctx: &TlCtx<'_>) -> Vec<TlRow<'a>> {
 }
 
 /// Swimlane-grouped rows: (Some(header), empty) for lane titles, then rows.
-pub fn timeline_lanes<'a>(
-    prj: &'a Project,
-    ctx: &TlCtx<'_>,
-) -> Vec<(Option<String>, TlRow<'a>)> {
+pub fn timeline_lanes<'a>(prj: &'a Project, ctx: &TlCtx<'_>) -> Vec<(Option<String>, TlRow<'a>)> {
     let rows = timeline_rows(prj, ctx);
     if ctx.swimlane == Swimlane::Off {
         return rows.into_iter().map(|r| (None, r)).collect();
@@ -739,7 +956,10 @@ pub struct PlState {
 
 impl Default for PlState {
     fn default() -> Self {
-        PlState { mode: PlMode::Auto, grid: false }
+        PlState {
+            mode: PlMode::Auto,
+            grid: false,
+        }
     }
 }
 
@@ -814,7 +1034,10 @@ pub fn plotline_rows<'a>(
                 (false, true) => '○',
                 _ => '△',
             };
-            rows.push(PlRow::ThreadHeader { key: t.key.clone(), state: state_ch });
+            rows.push(PlRow::ThreadHeader {
+                key: t.key.clone(),
+                state: state_ch,
+            });
             for i in t.setup {
                 rows.push(PlRow::ThreadScene {
                     side: Side::Setup,
@@ -853,21 +1076,39 @@ pub fn plotline_rows<'a>(
                 .filter(|t| sc.plotlines.iter().any(|p| p.eq_ignore_ascii_case(&t.name)))
                 .count()
                 > 1;
-            let rank = sc.stage.as_deref().and_then(|s| stage_rank(&track.stages, s));
+            let rank = sc
+                .stage
+                .as_deref()
+                .and_then(|s| stage_rank(&track.stages, s));
             let regression = matches!((prev_rank, rank), (Some(p), Some(r)) if r < p);
             if rank.is_some() {
                 prev_rank = rank;
             }
-            rows.push(PlRow::Stage { lane: track, scene: sc, shared, regression, staged: scene_staged(sc, staged) });
+            rows.push(PlRow::Stage {
+                lane: track,
+                scene: sc,
+                shared,
+                regression,
+                staged: scene_staged(sc, staged),
+            });
         }
         // Unreached declared stages as ghosts.
         for stage in &track.stages {
             let reached = prj.scenes.iter().any(|sc| {
-                sc.plotlines.iter().any(|p| p.eq_ignore_ascii_case(&track.name))
-                    && sc.stage.as_deref().map(|s| s.eq_ignore_ascii_case(stage)).unwrap_or(false)
+                sc.plotlines
+                    .iter()
+                    .any(|p| p.eq_ignore_ascii_case(&track.name))
+                    && sc
+                        .stage
+                        .as_deref()
+                        .map(|s| s.eq_ignore_ascii_case(stage))
+                        .unwrap_or(false)
             });
             if !reached {
-                rows.push(PlRow::Ghost { lane: track, stage: stage.clone() });
+                rows.push(PlRow::Ghost {
+                    lane: track,
+                    stage: stage.clone(),
+                });
             }
         }
     }
@@ -882,7 +1123,10 @@ pub fn plot_grid(prj: &Project) -> Vec<String> {
     }
     out.push(format!(
         "             {}",
-        prj.tracks.iter().map(|t| format!("{:>10}", fit(&t.name, 9))).collect::<String>()
+        prj.tracks
+            .iter()
+            .map(|t| format!("{:>10}", fit(&t.name, 9)))
+            .collect::<String>()
     ));
     let all_stages: Vec<String> = prj
         .tracks
@@ -903,7 +1147,11 @@ pub fn plot_grid(prj: &Project) -> Vec<String> {
                 .iter()
                 .filter(|sc| {
                     sc.plotlines.iter().any(|p| p.eq_ignore_ascii_case(&t.name))
-                        && sc.stage.as_deref().map(|s| s.eq_ignore_ascii_case(stage)).unwrap_or(false)
+                        && sc
+                            .stage
+                            .as_deref()
+                            .map(|s| s.eq_ignore_ascii_case(stage))
+                            .unwrap_or(false)
                 })
                 .collect();
             let mark = if hits.is_empty() {
@@ -913,7 +1161,11 @@ pub fn plot_grid(prj: &Project) -> Vec<String> {
             } else {
                 "●"
             };
-            let count = if hits.len() > 1 { format!("{mark}{}", hits.len()) } else { mark.to_string() };
+            let count = if hits.len() > 1 {
+                format!("{mark}{}", hits.len())
+            } else {
+                mark.to_string()
+            };
             row.push_str(&format!("{:>10} ", count));
         }
         out.push(row);
@@ -943,9 +1195,7 @@ fn plotlines(
         if state.grid {
             "grid · v modes · p back".to_string()
         } else {
-            format!(
-                "{mode_hint} · v modes · p grid · a attach · i stage · x detach"
-            )
+            format!("{mode_hint} · v modes · p grid · a attach · i stage · x detach")
         },
         theme.dim(),
     )));
@@ -998,11 +1248,20 @@ fn plotlines(
             PlRow::ThreadHeader { key, state: st } => ListItem::new(Line::from(vec![
                 Span::styled(
                     format!("{st} "),
-                    theme.slot_fg(if *st == '△' { Slot::Warning } else { Slot::Success }),
+                    theme.slot_fg(if *st == '△' {
+                        Slot::Warning
+                    } else {
+                        Slot::Success
+                    }),
                 ),
                 Span::styled(key.clone(), Style::default().add_modifier(Modifier::BOLD)),
             ])),
-            PlRow::ThreadScene { side, scene, staged, .. } => ListItem::new(Line::from(vec![
+            PlRow::ThreadScene {
+                side,
+                scene,
+                staged,
+                ..
+            } => ListItem::new(Line::from(vec![
                 Span::raw("    "),
                 Span::styled(
                     match side {
@@ -1014,7 +1273,13 @@ fn plotlines(
                 Span::raw(scene.title.clone()),
                 Span::styled(if *staged { " ▒" } else { "" }, theme.dim()),
             ])),
-            PlRow::Stage { scene, shared, regression, staged, .. } => {
+            PlRow::Stage {
+                scene,
+                shared,
+                regression,
+                staged,
+                ..
+            } => {
                 let stage = scene.stage.as_deref().unwrap_or("—");
                 let pill_style = if *regression {
                     theme.slot_fg(Slot::Warning)
@@ -1064,7 +1329,13 @@ pub struct RelState {
 
 impl Default for RelState {
     fn default() -> Self {
-        RelState { node: 0, pane: Pane::Graph, edge: 0, filter: None, hide_orphans: false }
+        RelState {
+            node: 0,
+            pane: Pane::Graph,
+            edge: 0,
+            filter: None,
+            hide_orphans: false,
+        }
     }
 }
 
@@ -1081,7 +1352,10 @@ fn relations(
     let order = view.order_visible();
     if order.is_empty() {
         f.render_widget(
-            Line::from(Span::styled("no cards match — / to clear the filter", theme.dim())),
+            Line::from(Span::styled(
+                "no cards match — / to clear the filter",
+                theme.dim(),
+            )),
             centered(area),
         );
         return;
@@ -1136,7 +1410,14 @@ fn relations(
                 ctx.print(
                     x - (label.width() as f64) * 0.004,
                     y + 0.02,
-                    Span::styled(label, if focused { theme.accent_plain() } else { theme.dim() }),
+                    Span::styled(
+                        label,
+                        if focused {
+                            theme.accent_plain()
+                        } else {
+                            theme.dim()
+                        },
+                    ),
                 );
             }
         });
@@ -1149,7 +1430,10 @@ fn relations(
                 Span::styled(format!("◆ {} ", node.name), theme.text_bold()),
                 Span::styled(format!("· {}", node.rtype), theme.dim()),
             ]),
-            Line::from(Span::styled(format!("{} mentions", node.mentions), theme.dim())),
+            Line::from(Span::styled(
+                format!("{} mentions", node.mentions),
+                theme.dim(),
+            )),
         ];
         let edges_of = graph.edges_of(node_i);
         lines.push(Line::from(Span::styled("edges:", theme.dim())));
@@ -1182,8 +1466,8 @@ fn relations(
 mod tests {
     use super::*;
     use crate::theme::{ASCII_GLYPHS, NERD_GLYPHS, SAFE_GLYPHS};
-    use std::path::PathBuf;
     use ratatui::{backend::TestBackend, Terminal};
+    use std::path::PathBuf;
     use termprofile::TermProfile;
 
     fn fixture() -> Project {
@@ -1228,13 +1512,7 @@ mod tests {
         }
     }
 
-    fn frame_text(
-        width: u16,
-        height: u16,
-        tab: &Tab,
-        prj: &Project,
-        theme: &Theme,
-    ) -> String {
+    fn frame_text(width: u16, height: u16, tab: &Tab, prj: &Project, theme: &Theme) -> String {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut ls = ListState::default();
@@ -1254,7 +1532,17 @@ mod tests {
                 if *tab != Tab::Timeline {
                     tl_ctx = None;
                 }
-                render(f, prj, tab, &mut ls, theme, &Hud::default(), tl_ctx, None, None)
+                render(
+                    f,
+                    prj,
+                    tab,
+                    &mut ls,
+                    theme,
+                    &Hud::default(),
+                    tl_ctx,
+                    None,
+                    None,
+                )
             })
             .unwrap();
         terminal
@@ -1280,14 +1568,12 @@ mod tests {
                     "tab strip present at {width}"
                 );
                 match tab {
-                    Tab::Dashboard => assert!(
-                        text.contains("The Harbor"),
-                        "chapter rows at {width}"
-                    ),
-                    Tab::Corkboard => assert!(
-                        text.contains("The warning"),
-                        "scene rows at {width}"
-                    ),
+                    Tab::Dashboard => {
+                        assert!(text.contains("The Harbor"), "chapter rows at {width}")
+                    }
+                    Tab::Corkboard => {
+                        assert!(text.contains("The warning"), "scene rows at {width}")
+                    }
                     Tab::Timeline => {
                         assert!(text.contains("The warning"), "timeline rows at {width}")
                     }
@@ -1298,6 +1584,18 @@ mod tests {
     }
 
     #[test]
+    fn dashboard_wide_renders_cockpit() {
+        let prj = fixture();
+        let theme = Theme::from_profile(TermProfile::TrueColor, "dark");
+        let wide = frame_text(100, 24, &Tab::Dashboard, &prj, &theme);
+        assert!(wide.contains("manuscript"), "gauge label at 100 cols");
+        assert!(wide.contains("BINDER"), "nav binder at 100 cols");
+        assert!(wide.contains("WORD FLOW"), "sparkline panel at 100 cols");
+        let narrow = frame_text(60, 24, &Tab::Dashboard, &prj, &theme);
+        assert!(narrow.contains("CHAPTERS"), "compact list at 60 cols");
+    }
+
+    #[test]
     fn footer_shows_descriptions_when_room_allows() {
         let prj = fixture();
         let theme = Theme::from_profile(TermProfile::TrueColor, "dark");
@@ -1305,8 +1603,50 @@ mod tests {
         assert!(wide.contains("chapters"), "footer descriptions at 100 cols");
         assert!(wide.contains('q'), "footer keys at 100 cols");
         let narrow = frame_text(40, 24, &Tab::Dashboard, &prj, &theme);
-        assert!(!narrow.contains("views"), "compact footer hides descriptions");
+        assert!(
+            !narrow.contains("views"),
+            "compact footer hides descriptions"
+        );
         assert!(narrow.contains('q'), "compact footer keeps keys");
+    }
+
+    #[test]
+    fn help_overlay_toggles() {
+        let prj = fixture();
+        let theme = Theme::from_profile(TermProfile::TrueColor, "dark");
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut ls = ListState::default();
+        let hud = Hud {
+            show_help: true,
+            ..Default::default()
+        };
+        terminal
+            .draw(|f| {
+                render(
+                    f,
+                    &prj,
+                    &Tab::Dashboard,
+                    &mut ls,
+                    &theme,
+                    &hud,
+                    None,
+                    None,
+                    None,
+                )
+            })
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("storyteller · keys"), "help title visible");
+        assert!(text.contains("GLOBAL"), "global bindings listed");
+        assert!(text.contains("THIS VIEW"), "per-view bindings listed");
+        assert!(text.contains("reload from disk"), "R binding described");
     }
 
     #[test]
@@ -1316,9 +1656,25 @@ mod tests {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut ls = ListState::default();
-        let hud = Hud { pending: 2, message: None };
+        let hud = Hud {
+            pending: 2,
+            message: None,
+            ..Default::default()
+        };
         terminal
-            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None, None, None))
+            .draw(|f| {
+                render(
+                    f,
+                    &prj,
+                    &Tab::Timeline,
+                    &mut ls,
+                    &theme,
+                    &hud,
+                    None,
+                    None,
+                    None,
+                )
+            })
             .unwrap();
         let text: String = terminal
             .backend()
@@ -1331,11 +1687,27 @@ mod tests {
         assert!(text.contains("S apply"), "apply hint while staging");
 
         // A status message renders instead when present.
-        let hud = Hud { pending: 0, message: Some("applied 3 change(s)") };
+        let hud = Hud {
+            pending: 0,
+            message: Some("applied 3 change(s)"),
+            ..Default::default()
+        };
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
-            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None, None, None))
+            .draw(|f| {
+                render(
+                    f,
+                    &prj,
+                    &Tab::Timeline,
+                    &mut ls,
+                    &theme,
+                    &hud,
+                    None,
+                    None,
+                    None,
+                )
+            })
             .unwrap();
         let text: String = terminal
             .backend()
@@ -1377,26 +1749,51 @@ mod tests {
         theme.apply_glyphs("nerd");
         assert_eq!(theme.glyphs.brand, NERD_GLYPHS.brand);
         assert_eq!(theme.glyphs.tabs.len(), 5);
-        assert!(!theme.glyphs.tabs[2].is_empty(), "timeline tab carries an icon");
+        assert!(
+            !theme.glyphs.tabs[2].is_empty(),
+            "timeline tab carries an icon"
+        );
         theme.apply_glyphs("ascii");
         assert_eq!(theme.glyphs.brand, ASCII_GLYPHS.brand);
         theme.apply_glyphs("bogus");
-        assert_eq!(theme.glyphs.brand, SAFE_GLYPHS.brand, "unknown tiers fall back to safe");
+        assert_eq!(
+            theme.glyphs.brand, SAFE_GLYPHS.brand,
+            "unknown tiers fall back to safe"
+        );
     }
 
     #[test]
     fn degradation_keeps_structure_identical() {
         let prj = fixture();
-        let truecolor = frame_text(100, 24, &Tab::Corkboard, &prj, &Theme::from_profile(TermProfile::TrueColor, "dark"));
-        let ansi16 = frame_text(100, 24, &Tab::Corkboard, &prj, &Theme::from_profile(TermProfile::Ansi16, "dark"));
-        assert_eq!(truecolor, ansi16, "same project renders identical text under any capability");
+        let truecolor = frame_text(
+            100,
+            24,
+            &Tab::Corkboard,
+            &prj,
+            &Theme::from_profile(TermProfile::TrueColor, "dark"),
+        );
+        let ansi16 = frame_text(
+            100,
+            24,
+            &Tab::Corkboard,
+            &prj,
+            &Theme::from_profile(TermProfile::Ansi16, "dark"),
+        );
+        assert_eq!(
+            truecolor, ansi16,
+            "same project renders identical text under any capability"
+        );
     }
 
     fn lane_fixture() -> Project {
         let mut prj = fixture();
         prj.tracks = vec![crate::project::Track {
             name: "The Long Way Home".into(),
-            stages: vec!["refusal".into(), "road of trials".into(), "homecoming".into()],
+            stages: vec![
+                "refusal".into(),
+                "road of trials".into(),
+                "homecoming".into(),
+            ],
             arc_of: Some("Odysseus".into()),
         }];
         // First scene reaches stage 2; second goes back to stage 1.
@@ -1414,7 +1811,11 @@ mod tests {
         match (&rows[0], &rows[1], &rows[2]) {
             (
                 PlRow::LaneHeader(t),
-                PlRow::Stage { regression: r1, shared: s1, .. },
+                PlRow::Stage {
+                    regression: r1,
+                    shared: s1,
+                    ..
+                },
                 PlRow::Stage { regression: r2, .. },
             ) => {
                 assert_eq!(t.name, "The Long Way Home");
@@ -1425,7 +1826,8 @@ mod tests {
         }
         // The unreached declared stage shows as a ghost row.
         assert!(
-            rows.iter().any(|r| matches!(r, PlRow::Ghost { stage, .. } if stage == "homecoming")),
+            rows.iter()
+                .any(|r| matches!(r, PlRow::Ghost { stage, .. } if stage == "homecoming")),
             "unreached stages appear as ghosts"
         );
     }
@@ -1436,7 +1838,14 @@ mod tests {
         prj.scenes[0].setup = vec!["storm".into()];
         prj.scenes[1].payoff = vec!["Storm".into()];
         prj.scenes[1].setup = vec!["homecoming".into()];
-        let rows = plotline_rows(&prj, &PlState { mode: PlMode::Threads, grid: false }, &[]);
+        let rows = plotline_rows(
+            &prj,
+            &PlState {
+                mode: PlMode::Threads,
+                grid: false,
+            },
+            &[],
+        );
         let header = |k: &str| {
             rows.iter().find_map(|r| match r {
                 PlRow::ThreadHeader { key, state } if key == k => Some(*state),
@@ -1444,7 +1853,11 @@ mod tests {
             })
         };
         assert_eq!(header("storm"), Some('●'), "matched thread resolves");
-        assert_eq!(header("homecoming"), Some('○'), "setup-only thread stays open");
+        assert_eq!(
+            header("homecoming"),
+            Some('○'),
+            "setup-only thread stays open"
+        );
         assert_eq!(rows.len(), 5, "two headers + three scene rows");
     }
 

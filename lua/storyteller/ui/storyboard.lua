@@ -319,9 +319,11 @@ function M.open(name, prj, axis)
   end
 
   local buf = vim.api.nvim_create_buf(false, true)
-  local board_name = "storyteller://" .. name
+  local board_name = "storyteller://"
+    .. name
     .. (axis and ("/" .. axis) or "")
-    .. "/" .. vim.fn.fnamemodify(prj.root, ":t")
+    .. "/"
+    .. vim.fn.fnamemodify(prj.root, ":t")
   pcall(vim.api.nvim_buf_set_name, buf, board_name)
   vim.bo[buf].buftype = "acwrite"
   vim.bo[buf].bufhidden = "wipe"
@@ -329,6 +331,8 @@ function M.open(name, prj, axis)
   vim.bo[buf].filetype = "storyteller-board"
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, out.lines)
   state[buf] = { name = name, prj = prj, axis = axis, baseline = out.lines }
+  -- Commands chain naturally from a board (e.g. :Story timeline Past).
+  vim.b[buf].storyteller_project = prj
   board_hl.paint(buf, name)
 
   vim.api.nvim_create_autocmd("BufWriteCmd", {

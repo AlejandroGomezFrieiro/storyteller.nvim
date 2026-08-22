@@ -32,3 +32,16 @@ created: 2026-08-21
 
 Something should be lost here — a sail, a man, an omen — so the crossing feels
 paid for before the Charybdis appears.
+
+## Sharpen the harbor reveal
+
+```yaml
+storyteller: note
+status: open
+file: docs/vhs/demo/chapters/01_the_harbor.md
+line: 28
+created: 2026-08-22
+```
+
+> Odysseus watched the harbor lights bend in the rain. A messenger crossed the
+

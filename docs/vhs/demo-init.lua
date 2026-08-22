@@ -2,6 +2,11 @@
 -- Records the plugin surface AND the storyteller LSP (hover, gd, gr,
 -- completion, code actions, diagnostics) on the small project in demo/.
 vim.opt.runtimepath:prepend(vim.fn.getcwd())
+-- Recording-time completion plugin (blink.cmp from nixpkgs), mirroring the
+-- real writing setup; unset falls back to built-in client completion.
+if vim.env.STORYTELLER_DEMO_BLINK and vim.env.STORYTELLER_DEMO_BLINK ~= "" then
+  vim.opt.runtimepath:prepend(vim.env.STORYTELLER_DEMO_BLINK)
+end
 vim.g.mapleader = " "
 vim.o.termguicolors = true
 vim.o.background = "dark"
@@ -31,13 +36,20 @@ local has_lspsaga = pcall(function()
   require("lspsaga").setup({})
 end)
 local has_blink = pcall(function()
+  -- Recording-time blink.cmp mirrors the real writing setup; when recording,
+  -- keep the menu on the storyteller server's own completions in the order
+  -- the LSP declares via sortText.
+  local recording = vim.env.STORYTELLER_DEMO_RECORD == "1"
   require("blink.cmp").setup({
     keymap = { preset = "default" },
     completion = {
       menu = { border = "rounded" },
       documentation = { auto_show = true, auto_show_delay_ms = 250 },
     },
-    sources = { default = { "lsp", "path", "snippets", "buffer" } },
+    sources = {
+      default = recording and { "lsp" } or { "lsp", "path", "snippets", "buffer" },
+    },
+    fuzzy = recording and { sorts = { "sort_text", "score" } } or nil,
   })
 end)
 
@@ -150,6 +162,19 @@ vim.api.nvim_create_autocmd("LspAttach", {
       buf_map("v", "<leader>ll", function()
         code_action_filtered("Link")
       end)
+      -- No completion plugin in the recording environment: stand in with the
+      -- built-in client completion and a hand trigger for Ctrl+Space.
+      if not has_blink then
+        pcall(vim.lsp.completion.enable, true, client.id, args.buf, { autotrigger = false })
+        buf_map("i", "<C-Space>", function()
+          if vim.lsp.completion and vim.lsp.completion.get then
+            vim.lsp.completion.get()
+          else
+            local k = vim.api.nvim_replace_termcodes("<C-x><C-o>", true, false, true)
+            vim.api.nvim_feedkeys(k, "m", false)
+          end
+        end)
+      end
       vim.bo[args.buf].omnifunc = "v:lua.vim.lsp.omnifunc"
     end
   end,

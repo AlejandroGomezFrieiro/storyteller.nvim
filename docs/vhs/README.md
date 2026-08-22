@@ -64,9 +64,12 @@ The output paths are declared inside each tape:
 | `13-compose.tape` | `13-compose.gif` | Distraction-free composition mode. |
 | `14-corkboard-move.tape` | `14-corkboard-move.gif` | Reordering scenes with `J`/`K`; `:w` applies across chapter files. |
 | `15-snapshot-diff.tape` | `15-snapshot-diff.gif` | Snapshot, revise, and diff against the snapshot. |
+| `16-relations.tape` | `16-relations.gif` | The character relationship graph. |
 | `17-synopsis.tape` | `17-synopsis.gif` | The synopsis outliner; prose writes back to YAML on `:w`. |
 | `18-metasheet.tape` | `18-metasheet.gif` | Bulk metadata editing; even `:s` is a project edit. |
 | `19-tui.tape` | `19-tui.gif` | The `storyteller-tui` cockpit: dashboard, corkboard, timeline. |
+| `20-relations-tui.tape` | `20-relations-tui.gif` | The TUI relations graph with its inspector pane. |
+| `21-plotlines-tui.tape` | `21-plotlines-tui.gif` | The TUI plotlines lanes, threads, and grid. |
 | `storyteller.tape` | `storyteller.gif` | Tour: dashboard → corkboard → scrivenings. |
 
 `demo-init.lua` starts the plugin and the `storyteller-lsp` client for the

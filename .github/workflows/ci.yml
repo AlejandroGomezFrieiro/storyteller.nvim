@@ -5,27 +5,36 @@ on:
   pull_request:
 
 jobs:
-  test:
+  nix:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        neovim: ["0.10.4", "0.11.3"]
     steps:
       - uses: actions/checkout@v4
-      - uses: rhysd/action-setup-vim@v1
-        with:
-          neovim: true
-          version: ${{ matrix.neovim }}
-      - name: Run headless test suite
-        run: |
-          nvim --headless -u NONE -l tests/storyteller_spec.lua
 
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: JohnnyMorganz/stylua-action@v4
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          version: latest
-          args: --check lua/ plugin/ tests/
+          extra-conf: |
+            experimental-features = nix-command flakes
+
+      - name: Enable Nix binary cache
+        uses: DeterminateSystems/magic-nix-cache-action@v9
+
+      - name: Build packages (plugin + TUI; buildRustPackage runs cargo tests)
+        run: nix build .#default .#storyteller-tui
+
+      - name: Rust fmt / clippy / tests
+        run: |
+          nix develop .#default --command bash -c '
+            cd tui
+            cargo fmt --check
+            cargo clippy --all-targets -- -D warnings
+            cargo test
+          '
+
+      - name: Lua tests + lint
+        run: |
+          nix develop .#default --command bash -c '
+            nvim --headless -u NONE -l tests/storyteller_spec.lua
+            stylua --check lua/ plugin/ tests/
+            luacheck lua/ plugin/ tests/
+          '
