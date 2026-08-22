@@ -19,6 +19,14 @@ pub enum Tab {
     Timeline,
 }
 
+/// Transient chrome the frame renders from app state: staged-edit counters
+/// and the last status message (docs/rework-plan.md Phase D).
+#[derive(Default)]
+pub struct Hud<'a> {
+    pub pending: usize,
+    pub message: Option<&'a str>,
+}
+
 const TAB_TITLES: [(&str, &str); 3] =
     [("1", "Dashboard"), ("2", "Corkboard"), ("3", "Timeline")];
 
@@ -54,6 +62,7 @@ impl Tab {
                 ("o", "open"),
                 ("/", "filter"),
                 ("Tab", "views"),
+                ("R", "reload"),
                 ("q", "quit"),
             ],
             Tab::Timeline => vec![
@@ -61,6 +70,7 @@ impl Tab {
                 ("o", "open"),
                 ("/", "filter"),
                 ("Tab", "views"),
+                ("R", "reload"),
                 ("q", "quit"),
             ],
         }
@@ -118,7 +128,7 @@ fn words_compact(words: usize) -> String {
     }
 }
 
-pub fn render(f: &mut Frame, prj: &Project, tab: &Tab, list_state: &mut ListState, theme: &Theme) {
+pub fn render(f: &mut Frame, prj: &Project, tab: &Tab, list_state: &mut ListState, theme: &Theme, hud: &Hud) {
     let area = f.area();
     let class = width_class(area.width);
 
@@ -152,7 +162,8 @@ pub fn render(f: &mut Frame, prj: &Project, tab: &Tab, list_state: &mut ListStat
         Tab::Timeline => timeline(f, prj, body, list_state, theme, class),
     }
 
-    // Footer key strip: bold accent key + dim description pairs.
+    // Footer: key strip on the left; status message / staging segment on the
+    // right. Pending edits render in the warning slot until applied.
     let mut spans = Vec::new();
     for (key, desc) in tab.bindings() {
         if !spans.is_empty() {
@@ -163,7 +174,39 @@ pub fn render(f: &mut Frame, prj: &Project, tab: &Tab, list_state: &mut ListStat
             spans.push(Span::styled(format!(" {desc}"), theme.dim()));
         }
     }
-    f.render_widget(Line::from(spans), footer);
+
+    let mut right: Vec<Span> = Vec::new();
+    if let Some(msg) = hud.message {
+        right.push(Span::styled(msg.to_string(), theme.accent_plain()));
+    }
+    if hud.pending > 0 {
+        if !right.is_empty() {
+            right.push(Span::styled(" · ", theme.dim()));
+        }
+        right.push(Span::styled(
+            format!("{} pending", hud.pending),
+            theme.slot_fg(Slot::Warning),
+        ));
+        right.push(Span::styled(" · ", theme.dim()));
+        right.push(Span::styled("S apply", theme.slot_fg(Slot::Warning)));
+    }
+
+    if right.is_empty() {
+        f.render_widget(Line::from(spans), footer);
+    } else {
+        use unicode_width::UnicodeWidthStr;
+        let used_right: usize = right.iter().map(|s| s.content.width()).sum();
+        let used_left: usize = spans.iter().map(|s| s.content.width()).sum();
+        let gap = (footer.width as usize).saturating_sub(used_left + used_right + 1);
+        if gap >= 2 {
+            spans.push(Span::raw(" ".repeat(gap)));
+            spans.extend(right);
+            f.render_widget(Line::from(spans), footer);
+        } else {
+            // Too narrow for both: staging state wins.
+            f.render_widget(Line::from(right), footer);
+        }
+    }
 }
 
 // --- Dashboard ---------------------------------------------------------------
@@ -393,7 +436,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let mut ls = ListState::default();
         terminal
-            .draw(|f| render(f, prj, tab, &mut ls, theme))
+            .draw(|f| render(f, prj, tab, &mut ls, theme, &Hud::default()))
             .unwrap();
         terminal
             .backend()
@@ -444,6 +487,44 @@ mod tests {
         let narrow = frame_text(40, 24, &Tab::Dashboard, &prj, &theme);
         assert!(!narrow.contains("views"), "compact footer hides descriptions");
         assert!(narrow.contains('q'), "compact footer keeps keys");
+    }
+
+    #[test]
+    fn footer_shows_pending_staging_segment() {
+        let prj = fixture();
+        let theme = Theme::from_profile(TermProfile::TrueColor, "dark");
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut ls = ListState::default();
+        let hud = Hud { pending: 2, message: None };
+        terminal
+            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("2 pending"), "pending count on the footer");
+        assert!(text.contains("S apply"), "apply hint while staging");
+
+        // A status message renders instead when present.
+        let hud = Hud { pending: 0, message: Some("applied 3 change(s)") };
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("applied 3"), "status message visible");
     }
 
     #[test]

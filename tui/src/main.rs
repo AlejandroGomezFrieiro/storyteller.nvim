@@ -82,7 +82,8 @@ fn main() -> Result<()> {
         args.theme.as_deref(),
         args.background.as_deref(),
     ));
-    let prj = std::sync::Arc::new(project::load(&args.path)?);
+    let mut prj = project::load(&args.path)?;
+    let mut store = store::Store::new(&args.path)?;
 
     let backend = CrosstermBackend::new(std::io::stdout());
     let mut terminal = Terminal::new(backend)?;
@@ -95,10 +96,12 @@ fn main() -> Result<()> {
 
     let mut tab = Tab::Dashboard;
     let mut list_state = ratatui::widgets::ListState::default();
+    let mut hud_message: Option<String> = None;
     let mut quit = false;
 
     while !quit {
-        terminal.draw(|f| ui::render(f, &prj, &tab, &mut list_state, &theme))?;
+        let hud = ui::Hud { pending: store.pending(), message: hud_message.as_deref() };
+        terminal.draw(|f| ui::render(f, &prj, &tab, &mut list_state, &theme, &hud))?;
         match event::read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
                 match key.code {
@@ -106,6 +109,28 @@ fn main() -> Result<()> {
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         quit = true
                     }
+                    // Staged-edit verbs (docs/rework-plan.md Phase D):
+                    KeyCode::Char('S') => match store.apply() {
+                        Ok(n) => {
+                            prj = project::load(&args.path)?;
+                            hud_message = Some(format!("applied {n} change(s)"));
+                        }
+                        Err(e) => hud_message = Some(format!("apply failed: {e}")),
+                    },
+                    KeyCode::Char('u') | KeyCode::Esc => {
+                        if store.pending() > 0 {
+                            store.drop_staged();
+                            hud_message = Some("staged changes dropped".to_string());
+                        }
+                    }
+                    KeyCode::Char('R') => match project::load(&args.path) {
+                        Ok(fresh) => {
+                            prj = fresh;
+                            store.refresh()?;
+                            hud_message = Some("reloaded from disk".to_string());
+                        }
+                        Err(e) => hud_message = Some(format!("reload failed: {e}")),
+                    },
                     KeyCode::Char('j') | KeyCode::Down => {
                         list_state.select_next();
                     }
