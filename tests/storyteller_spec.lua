@@ -1124,5 +1124,88 @@ do
 end
 
 vim.fn.delete(ptmp, "rf")
+
+-- === Schema v1.3 parity: shelving exclusion + list-field round-trips ===
+do
+  local stmp = vim.fn.tempname()
+  vim.fn.mkdir(stmp .. "/chapters", "p")
+  vim.fn.mkdir(stmp .. "/references/characters", "p")
+  vim.fn.writefile({}, stmp .. "/.storyteller")
+  vim.fn.writefile({
+    "# Chapter One",
+    "",
+    "## Kept",
+    "",
+    "```yaml",
+    "storyteller: scene",
+    "day: 1",
+    "plotlines:",
+    "  - Telemachy",
+    "also:",
+    "  - { timeline: Past, at: 40 }",
+    "events:",
+    "  - The Assembly",
+    "```",
+    "",
+    "Five words of kept prose here.",
+    "",
+    "## Shelved",
+    "",
+    "```yaml",
+    "storyteller: scene",
+    "status: unused",
+    "day: 2",
+    "```",
+    "",
+    "Ten words that must not be counted at all.",
+    "",
+  }, stmp .. "/chapters/01.md")
+  vim.fn.writefile({
+    "---",
+    "status: unused",
+    "---",
+    "",
+    "# Chapter Two",
+    "",
+    "## The cave",
+    "",
+    "prose words words words",
+  }, stmp .. "/chapters/02-cave.md")
+
+  local sprj = project.resolve(stmp)
+  local chapters = index.chapters(sprj)
+  assert_true(#chapters == 2, "shelved chapter still indexes for editing")
+  assert_true(chapters[2].status == "unused", "chapter frontmatter status is surfaced")
+
+  -- Compilation excludes the shelved scene and the whole unused chapter.
+  local ms = compile.manuscript(sprj)
+  local text = table.concat(ms, "\n")
+  assert_true(text:match("Kept") ~= nil, "kept scene compiles")
+  assert_true(text:match("Shelved") == nil, "unused scene is excluded from compilation")
+  assert_true(text:match("The cave") == nil, "unused chapter is excluded from compilation")
+
+  -- Word totals skip shelved work.
+  assert_true(index.chapter_words(chapters[1]) == 6, "unused scenes stay out of chapter word totals")
+  assert_true(index.chapter_words(chapters[2]) == 0, "unused chapters contribute zero words")
+
+  -- A4: new list fields round-trip as opaque strings (flow maps included).
+  local sc = index.scenes(sprj)[1]
+  assert_true(sc.meta.plotlines[1] == "Telemachy", "plotlines read as string lists")
+  assert_true(
+    sc.meta.also[1] == "{ timeline: Past, at: 40 }",
+    "also entries stay opaque flow-map strings"
+  )
+  assert_true(sc.meta.events[1] == "The Assembly", "events read as string lists")
+  local serde = require("storyteller.meta.serde")
+  local out = serde.encode_map(sc.meta, { "day", "plotlines", "also", "events" })
+  local joined = table.concat(out, "\n")
+  assert_true(
+    joined:match("%- %{ timeline: Past, at: 40 %}") ~= nil,
+    "flow-map placement survives encode verbatim"
+  )
+
+  vim.fn.delete(stmp, "rf")
+end
+
 print(("RESULT: %d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

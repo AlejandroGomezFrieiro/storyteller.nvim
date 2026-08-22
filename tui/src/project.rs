@@ -29,6 +29,9 @@ pub struct Chapter {
     pub file: PathBuf,
     pub words: usize,
     pub target: Option<u64>,
+    // Frontmatter status: `unused` shelves the whole chapter from word
+    // totals and views, matching its exclusion from compilation.
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -96,11 +99,15 @@ fn list_md(dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 fn parse_scene_block(block: &[&str]) -> (Option<String>, Option<String>, Option<String>, Option<i64>) {
+    // Coordinate precedence matches the standard: `at` › `day` › `time`.
+    let coord = ["at", "day", "time"]
+        .iter()
+        .find_map(|k| scene_field(block, k).and_then(|v| v.trim().parse().ok()));
     (
         scene_field(block, "status"),
         scene_field(block, "pov"),
         scene_field(block, "location"),
-        scene_field(block, "day").and_then(|d| d.trim().parse().ok()),
+        coord,
     )
 }
 
@@ -114,17 +121,30 @@ pub fn load(root: &Path) -> Result<Project> {
             file: file.clone(),
             words: 0,
             target: None,
+            status: None,
         };
         let mut in_fence = false;
         let mut current: Option<Scene> = None;
         let mut yaml_block: Vec<&str> = Vec::new();
         let mut in_yaml = false;
+        // Scenes of this file, buffered so a shelved chapter can drop them.
+        let mut file_scenes: Vec<Scene> = Vec::new();
 
         for (i, line) in lines.iter().enumerate() {
-            // Chapter target: a `target:` key in the leading frontmatter.
-            if current.is_none() && chapter.target.is_none() {
+            // Chapter frontmatter keys (before the first scene heading).
+            if current.is_none() {
                 if let Some(rest) = line.strip_prefix("target:") {
-                    chapter.target = rest.trim().parse().ok();
+                    if chapter.target.is_none() {
+                        chapter.target = rest.trim().parse().ok();
+                    }
+                }
+                if chapter.status.is_none() {
+                    if let Some(rest) = line.strip_prefix("status:") {
+                        let s = rest.trim();
+                        if !s.is_empty() {
+                            chapter.status = Some(s.to_string());
+                        }
+                    }
                 }
             }
             if line.starts_with("# ") && chapter.title == file.file_stem().unwrap_or_default().to_string_lossy() {
@@ -137,7 +157,7 @@ pub fn load(root: &Path) -> Result<Project> {
                     sc.pov = pov;
                     sc.location = location;
                     sc.day = day;
-                    prj.scenes.push(sc);
+                    file_scenes.push(sc);
                 }
                 yaml_block.clear();
                 in_yaml = false;
@@ -175,14 +195,20 @@ pub fn load(root: &Path) -> Result<Project> {
             sc.pov = pov;
             sc.location = location;
             sc.day = day;
-            prj.scenes.push(sc);
+            file_scenes.push(sc);
         }
-        chapter.words = prj.scenes
-            .iter()
-            .filter(|s| s.file == file)
-            .map(|s| s.words)
-            .sum();
-        prj.total_words += chapter.words;
+        // The standard's shelving rule: `status: unused` scenes and whole
+        // chapters stay out of views and word totals, matching their
+        // exclusion from compilation.
+        if chapter.status.as_deref() != Some("unused") {
+            let kept: Vec<Scene> = file_scenes
+                .into_iter()
+                .filter(|s| s.status.as_deref() != Some("unused"))
+                .collect();
+            chapter.words = kept.iter().map(|s| s.words).sum();
+            prj.total_words += chapter.words;
+            prj.scenes.extend(kept);
+        }
         prj.chapters.push(chapter);
     }
     Ok(prj)
@@ -239,6 +265,50 @@ mod tests {
         let tl = prj.timeline();
         assert_eq!(tl[0].title, "The warning");
         assert_eq!(tl[1].title, "The storm"); // unscheduled sorts last
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn shelved_scenes_and_chapters_are_excluded() {
+        let dir = std::env::temp_dir().join(format!("st-tui-shelf-{}", std::process::id()));
+        fs::create_dir_all(dir.join("chapters")).unwrap();
+        fs::write(
+            dir.join("chapters/01.md"),
+            "# Chapter One\n\n## Kept\n```yaml\nstoryteller: scene\nday: 1\n```\nFive words here now.\n\n## Shelved\n```yaml\nstoryteller: scene\nstatus: unused\nday: 2\n```\nTen words that should not count at all.\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("chapters/02-cave.md"),
+            "---\nstatus: unused\n---\n\n# Chapter Two\n\n## The cave\nprose words words\n",
+        )
+        .unwrap();
+
+        let prj = load(&dir).unwrap();
+        assert_eq!(prj.chapters.len(), 2);
+        assert_eq!(prj.chapters[1].status.as_deref(), Some("unused"));
+        // Only the kept scene survives; the unused chapter contributes nothing.
+        assert_eq!(prj.scenes.len(), 1);
+        assert_eq!(prj.scenes[0].title, "Kept");
+        assert_eq!(prj.total_words, 4);
+        assert_eq!(prj.chapters[0].words, 4);
+        assert_eq!(prj.chapters[1].words, 0);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn coordinate_falls_back_at_then_day_then_time() {
+        let dir = std::env::temp_dir().join(format!("st-tui-coord-{}", std::process::id()));
+        fs::create_dir_all(dir.join("chapters")).unwrap();
+        fs::write(
+            dir.join("chapters/01.md"),
+            "# C\n\n## A\n```yaml\nstoryteller: scene\nat: 5\nday: 9\n```\nx\n\n## B\n```yaml\nstoryteller: scene\ntime: 3\n```\nx\n",
+        )
+        .unwrap();
+        let prj = load(&dir).unwrap();
+        assert_eq!(prj.scenes[0].day, Some(5), "at wins over day");
+        assert_eq!(prj.scenes[1].day, Some(3), "numeric time is a coordinate");
 
         fs::remove_dir_all(&dir).ok();
     }

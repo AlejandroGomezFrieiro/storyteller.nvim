@@ -353,6 +353,7 @@ mod tests {
                 file: PathBuf::from("01.md"),
                 words: 6120,
                 target: Some(8000),
+                status: None,
             }],
             scenes: vec![
                 crate::project::Scene {

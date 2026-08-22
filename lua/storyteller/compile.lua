@@ -175,21 +175,55 @@ local function filter_scenes(raw, include)
   return out
 end
 
--- Metadata-free longform for the whole project. A preset's include_statuses
--- filters scenes (chapter frontmatter still applies to kept scenes).
+-- The standard's shelving rule: a `## ` scene whose status is exactly
+-- `unused` is left out of every compiled artifact, together with its
+-- trailing blank separator. Always applies — presets filter on top of it.
+local function drop_unused_scenes(raw)
+  local out = {}
+  local i, n = 1, #raw
+  while i <= n do
+    if raw[i]:match("^##%s+") then
+      local j = i + 1
+      while j <= n and not raw[j]:match("^##%s+") do
+        j = j + 1
+      end
+      local status
+      for k = i + 1, j - 1 do
+        status = status or raw[k]:match("^%s*status:%s*(%S+)")
+      end
+      if status ~= "unused" then
+        for k = i, j - 1 do
+          out[#out + 1] = raw[k]
+        end
+      end
+      i = j
+    else
+      out[#out + 1] = raw[i]
+      i = i + 1
+    end
+  end
+  return out
+end
+
+-- Metadata-free longform for the whole project. Shelved (`unused`) scenes and
+-- whole chapters are always excluded; a preset's include_statuses filters
+-- further on top of that.
 function M.manuscript(prj)
   prj = prj or project.current()
   local out = {}
   local preset = M.preset(prj)
   local include = preset.include_statuses
   for _, ch in ipairs(index.chapters(prj)) do
-    local raw = index.cached_lines(ch.path) or {}
-    if include then
-      raw = filter_scenes(raw, include)
+    if ch.status ~= "unused" then
+      local raw = index.cached_lines(ch.path) or {}
+      raw = drop_unused_scenes(raw)
+      if include then
+        raw = filter_scenes(raw, include)
+      end
+      vim.list_extend(out, M.strip_metadata(raw))
+      out[#out + 1] = ""
+      out[#out + 1] = ""
     end
-    vim.list_extend(out, M.strip_metadata(raw))
-    out[#out + 1] = ""
-    out[#out + 1] = ""
   end
   return out
 end

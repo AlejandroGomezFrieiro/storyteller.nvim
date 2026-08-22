@@ -129,6 +129,8 @@ local function parse_chapter(path)
       end
     end
   end
+  -- Frontmatter status: `unused` shelves the whole chapter from compilation.
+  info.status = doc and doc.meta.status or nil
 
   -- Build scenes from `## ` headings at column 0.
   local cur = nil
@@ -273,9 +275,16 @@ M.scene_words = function(sc)
 end
 
 M.chapter_words = function(ch)
+  if ch.status == "unused" then
+    return 0
+  end
   local total = 0
   for _, sc in ipairs(ch.scenes) do
-    total = total + (sc.words or M.scene_words(sc))
+    -- Shelved (`unused`) scenes stay out of word totals, matching their
+    -- exclusion from compilation.
+    if (sc.meta and sc.meta.status) ~= "unused" then
+      total = total + (sc.words or M.scene_words(sc))
+    end
   end
   local lines = cached_lines(ch.path)
   local first = ch.scenes[1]
