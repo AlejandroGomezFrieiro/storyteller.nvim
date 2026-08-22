@@ -128,7 +128,15 @@ fn words_compact(words: usize) -> String {
     }
 }
 
-pub fn render(f: &mut Frame, prj: &Project, tab: &Tab, list_state: &mut ListState, theme: &Theme, hud: &Hud) {
+pub fn render(
+    f: &mut Frame,
+    prj: &Project,
+    tab: &Tab,
+    list_state: &mut ListState,
+    theme: &Theme,
+    hud: &Hud,
+    tl_ctx: Option<&TlCtx<'_>>,
+) {
     let area = f.area();
     let class = width_class(area.width);
 
@@ -159,7 +167,11 @@ pub fn render(f: &mut Frame, prj: &Project, tab: &Tab, list_state: &mut ListStat
     match tab {
         Tab::Dashboard => dashboard(f, prj, body, theme, class),
         Tab::Corkboard => corkboard(f, prj, body, list_state, theme, class),
-        Tab::Timeline => timeline(f, prj, body, list_state, theme, class),
+        Tab::Timeline => {
+            if let Some(ctx) = tl_ctx {
+                timeline(f, prj, body, list_state, theme, class, ctx);
+            }
+        }
     }
 
     // Footer: key strip on the left; status message / staging segment on the
@@ -343,6 +355,261 @@ fn corkboard(
 
 // --- Timeline ----------------------------------------------------------------
 
+/// Swimlane grouping for the Timeline tab.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Swimlane {
+    Off,
+    Pov,
+    Location,
+    Chapter,
+}
+
+impl Swimlane {
+    pub fn next(self) -> Self {
+        match self {
+            Swimlane::Off => Swimlane::Pov,
+            Swimlane::Pov => Swimlane::Location,
+            Swimlane::Location => Swimlane::Chapter,
+            Swimlane::Chapter => Swimlane::Off,
+        }
+    }
+
+}
+
+/// Timeline tab state owned by the app (docs/rework-plan.md §E3).
+pub struct TlState {
+    /// Index into the axis list (main first, then declared axes sorted).
+    pub axis: usize,
+    /// Story order (chronological) vs reading order (manuscript).
+    pub story_order: bool,
+    pub swimlane: Swimlane,
+    /// First marked row for the `s` swap verb.
+    pub mark: Option<usize>,
+}
+
+impl Default for TlState {
+    fn default() -> Self {
+        TlState { axis: 0, story_order: true, swimlane: Swimlane::Off, mark: None }
+    }
+}
+
+/// Everything the Timeline view and its key handlers need per frame.
+pub struct TlCtx<'a> {
+    pub axes: &'a storyteller_core::axes::Axes,
+    pub axis: &'a str,
+    pub story_order: bool,
+    pub swimlane: Swimlane,
+    /// Staged ops (to mark retimed rows ▒).
+    pub staged: &'a [crate::store::Op],
+}
+
+/// One selectable Timeline row: a scene placement on the focused axis.
+pub struct TlRow<'a> {
+    pub scene: &'a crate::project::Scene,
+    /// Some(placement) when this row is a secondary (`also:`) placement.
+    pub secondary: Option<&'a (String, String)>,
+    /// Coordinate as displayed.
+    pub raw: String,
+    /// Numeric/ordinal rank when the coordinate can order.
+    pub rank: Option<i64>,
+    /// Local diagnostics: (regression, overlap, sync-conflict).
+    pub regression: bool,
+    pub overlap: bool,
+    pub sync_conflict: bool,
+    pub staged: bool,
+}
+
+/// The axis list: implicit main first, then every declared axis sorted.
+pub fn axis_list(prj: &Project, axes: &storyteller_core::axes::Axes) -> Vec<String> {
+    let mut out = vec!["main".to_string()];
+    for sc in &prj.scenes {
+        if let Some(a) = &sc.axis {
+            if !out.iter().any(|n| n.eq_ignore_ascii_case(a)) {
+                out.push(a.clone());
+            }
+        }
+    }
+    let mut declared: Vec<String> = axes
+        .by_name
+        .values()
+        .map(|m| m.name.clone())
+        .filter(|n| !out.iter().any(|o| o.eq_ignore_ascii_case(n)))
+        .collect();
+    declared.sort();
+    declared.dedup();
+    out.extend(declared);
+    out
+}
+
+fn scene_coord_raw(sc: &crate::project::Scene) -> Option<String> {
+    sc.day.map(|d| d.to_string())
+}
+
+/// Build the selectable rows for one axis, ordered per the view mode, with
+/// local regression/overlap/sync diagnostics and staged markers.
+pub fn timeline_rows<'a>(prj: &'a Project, ctx: &TlCtx<'_>) -> Vec<TlRow<'a>> {
+    let axis_meta = ctx.axes.meta(ctx.axis);
+    let mut rows: Vec<TlRow<'a>> = Vec::new();
+    for sc in &prj.scenes {
+        // Primary placement.
+        let on_axis = sc
+            .axis
+            .as_deref()
+            .map(|a| a.eq_ignore_ascii_case(ctx.axis))
+            .unwrap_or(ctx.axis.eq_ignore_ascii_case("main"));
+        if on_axis {
+            let raw = scene_coord_raw(sc);
+            let rank = raw
+                .as_deref()
+                .and_then(|c| storyteller_core::axes::Coord::parse(c).rank(&axis_meta.order));
+            rows.push(TlRow {
+                scene: sc,
+                secondary: None,
+                raw: raw.clone().unwrap_or_else(|| "·".into()),
+                rank,
+                regression: false,
+                overlap: false,
+                sync_conflict: false,
+                staged: false,
+            });
+        }
+        // Secondary placements on this axis.
+        for placement in &sc.also {
+            if placement.0.eq_ignore_ascii_case(ctx.axis) {
+                let rank = storyteller_core::axes::Coord::parse(&placement.1).rank(&axis_meta.order);
+                rows.push(TlRow {
+                    scene: sc,
+                    secondary: Some(placement),
+                    raw: placement.1.clone(),
+                    rank,
+                    regression: false,
+                    overlap: false,
+                    sync_conflict: false,
+                    staged: false,
+                });
+            }
+        }
+    }
+
+    // Intra-scene sync conflicts: primary projected onto each secondary must
+    // land on it (exact anchors/origins only).
+    for sc in &prj.scenes {
+        let Some(primary) = scene_coord_raw(sc) else { continue };
+        let from = sc.axis.as_deref().unwrap_or("main");
+        for (bname, bcoord) in &sc.also {
+            if let Some(projected) =
+                storyteller_core::axes::project(ctx.axes, from, &storyteller_core::axes::Coord::parse(&primary), bname)
+            {
+                if projected.raw() != *bcoord {
+                    for r in rows.iter_mut().filter(|r| r.scene.line == sc.line) {
+                        r.sync_conflict = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Order.
+    if ctx.story_order {
+        rows.sort_by_key(|r| (r.rank.unwrap_or(i64::MAX), r.scene.line, r.secondary.is_some()));
+    }
+
+    // Local regression + overlap among linear-mode placements, in the
+    // displayed order's story axis.
+    if ctx.story_order {
+        let mut prev: Option<i64> = None;
+        let mut prev_line: Option<usize> = None;
+        for r in rows.iter_mut() {
+            let linear = r
+                .scene
+                .mode
+                .as_deref()
+                .map(|m| m.is_empty() || m == "linear")
+                .unwrap_or(true);
+            if let Some(rank) = r.rank {
+                if linear {
+                    if let (Some(p), Some(pl)) = (prev, prev_line) {
+                        if rank < p && pl != r.scene.line {
+                            r.regression = true;
+                        }
+                        if rank == p && pl != r.scene.line {
+                            r.overlap = true;
+                        }
+                    }
+                    prev = Some(rank);
+                    prev_line = Some(r.scene.line);
+                }
+            }
+        }
+    }
+
+    // Staged markers: any staged op touching this scene's file+line.
+    for r in rows.iter_mut() {
+        r.staged = ctx.staged.iter().any(|op| {
+            let (file, line) = match op {
+                crate::store::Op::SetCoord { scene, .. }
+                | crate::store::Op::SetField { scene, .. }
+                | crate::store::Op::AddPlacement { scene, .. }
+                | crate::store::Op::RemovePlacement { scene, .. } => (&scene.file, scene.line),
+                _ => return false,
+            };
+            file == &r.scene.file.to_string_lossy() && line == r.scene.line
+        });
+    }
+    rows
+}
+
+/// Swimlane-grouped rows: (Some(header), empty) for lane titles, then rows.
+pub fn timeline_lanes<'a>(
+    prj: &'a Project,
+    ctx: &TlCtx<'_>,
+) -> Vec<(Option<String>, TlRow<'a>)> {
+    let rows = timeline_rows(prj, ctx);
+    if ctx.swimlane == Swimlane::Off {
+        return rows.into_iter().map(|r| (None, r)).collect();
+    }
+    let key = |r: &TlRow| -> String {
+        match ctx.swimlane {
+            Swimlane::Pov => r.scene.pov.clone().unwrap_or_else(|| "—".into()),
+            Swimlane::Location => r.scene.location.clone().unwrap_or_else(|| "—".into()),
+            Swimlane::Chapter => r.scene.chapter.clone(),
+            Swimlane::Off => String::new(),
+        }
+    };
+    let mut groups: Vec<(String, Vec<TlRow>)> = Vec::new();
+    for r in rows {
+        let k = key(&r);
+        match groups.last_mut() {
+            Some((gk, list)) if *gk == k => list.push(r),
+            _ => groups.push((k, vec![r])),
+        }
+    }
+    let mut out = Vec::new();
+    for (k, list) in groups {
+        out.push((Some(k.clone()), TlRow::header(&list)));
+        out.extend(list.into_iter().map(|r| (None, r)));
+    }
+    out
+}
+
+impl<'a> TlRow<'a> {
+    fn header(from: &[TlRow<'a>]) -> Self {
+        match from.first() {
+            Some(r) => TlRow {
+                scene: r.scene,
+                secondary: r.secondary,
+                raw: String::new(),
+                rank: None,
+                regression: false,
+                overlap: false,
+                sync_conflict: false,
+                staged: false,
+            },
+            None => unreachable!("header from non-empty lane"),
+        }
+    }
+}
+
 fn timeline(
     f: &mut Frame,
     prj: &Project,
@@ -350,28 +617,59 @@ fn timeline(
     list_state: &mut ListState,
     theme: &Theme,
     class: WidthClass,
+    ctx: &TlCtx<'_>,
 ) {
-    let items: Vec<ListItem> = prj
-        .timeline()
-        .into_iter()
-        .map(|sc| {
-            let day = sc.day.map(|d| d.to_string()).unwrap_or_else(|| "·".into());
-            let day_span = if sc.day.is_some() {
-                Span::styled(format!(" {:>4} ", day), theme.accent_plain())
-            } else {
-                Span::styled(format!(" {:>4} ", day), theme.dim())
-            };
-            let mut spans = vec![day_span, Span::styled(fit(sc.title.as_str(), 30), theme.text_bold())];
-            if class != WidthClass::Compact {
-                spans.push(Span::styled(
-                    fit(sc.pov.as_deref().unwrap_or("—"), 16),
-                    theme.dim(),
-                ));
-                spans.push(Span::styled(format!("{:>5} w", words_compact(sc.words)), theme.dim()));
-            }
-            ListItem::new(Line::from(spans))
-        })
-        .collect();
+    let lanes = timeline_lanes(prj, ctx);
+    let mut items: Vec<ListItem> = Vec::new();
+    for (header, r) in &lanes {
+        if let Some(h) = header {
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(format!("▌ {h} "), theme.accent()),
+                Span::styled("┈".repeat(6), theme.dim()),
+            ])));
+            continue;
+        }
+        let marker = if r.staged { "▒" } else { " " };
+        let coord_span = if r.secondary.is_some() {
+            Span::styled(format!(" {marker}{:>4}~", r.raw), theme.dim())
+        } else if r.rank.is_some() {
+            Span::styled(format!(" {marker}{:>4} ", r.raw), theme.accent_plain())
+        } else {
+            Span::styled(format!(" {marker}{:>4} ", "·"), theme.dim())
+        };
+        let mode_badge = r
+            .scene
+            .mode
+            .as_deref()
+            .filter(|m| !m.is_empty() && *m != "linear")
+            .map(|_| Span::styled("~", theme.dim()));
+        let title_style = if r.regression || r.overlap || r.sync_conflict {
+            theme.slot_fg(Slot::Warning)
+        } else {
+            theme.text_bold()
+        };
+        let mut spans = vec![
+            coord_span,
+            Span::styled(fit(r.scene.title.as_str(), 30), title_style),
+        ];
+        if let Some(badge) = mode_badge {
+            spans.push(badge);
+        }
+        if let Some((axis, _)) = r.secondary {
+            spans.push(Span::styled(format!(" also:{axis}"), theme.dim()));
+        }
+        if class != WidthClass::Compact {
+            spans.push(Span::styled(
+                fit(r.scene.pov.as_deref().unwrap_or("—"), 16),
+                theme.dim(),
+            ));
+            spans.push(Span::styled(
+                format!("{:>5} w", words_compact(r.scene.words)),
+                theme.dim(),
+            ));
+        }
+        items.push(ListItem::new(Line::from(spans)));
+    }
     let list = List::new(items)
         .block(Block::default())
         .highlight_symbol(format!("{} ", theme.glyphs.selection))
@@ -408,6 +706,7 @@ mod tests {
                     location: None,
                     day: Some(1),
                     words: 412,
+                    ..Default::default()
                 },
                 crate::project::Scene {
                     title: "Storm lands".into(),
@@ -419,8 +718,10 @@ mod tests {
                     location: None,
                     day: None,
                     words: 1101,
+                    ..Default::default()
                 },
             ],
+            tracks: Vec::new(),
             total_words: 6120,
         }
     }
@@ -435,8 +736,24 @@ mod tests {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut ls = ListState::default();
+        let axes = storyteller_core::axes::Axes {
+            by_name: std::collections::HashMap::new(),
+        };
+        let ctx = TlCtx {
+            axes: &axes,
+            axis: "main",
+            story_order: true,
+            swimlane: Swimlane::Off,
+            staged: &[],
+        };
         terminal
-            .draw(|f| render(f, prj, tab, &mut ls, theme, &Hud::default()))
+            .draw(|f| {
+                let mut tl_ctx = Some(&ctx);
+                if *tab != Tab::Timeline {
+                    tl_ctx = None;
+                }
+                render(f, prj, tab, &mut ls, theme, &Hud::default(), tl_ctx)
+            })
             .unwrap();
         terminal
             .backend()
@@ -498,7 +815,7 @@ mod tests {
         let mut ls = ListState::default();
         let hud = Hud { pending: 2, message: None };
         terminal
-            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud))
+            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None))
             .unwrap();
         let text: String = terminal
             .backend()
@@ -515,7 +832,7 @@ mod tests {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
-            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud))
+            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None))
             .unwrap();
         let text: String = terminal
             .backend()

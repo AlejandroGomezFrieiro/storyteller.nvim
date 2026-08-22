@@ -55,9 +55,11 @@ frontends in the same release.
 
 The grammar scopes verbs to surfaces. `a` advances a card's status on the
 corkboard, but on surfaces without status — the Relations canvas and
-Plotlines lanes — it means *add* (an edge, a scene attachment). `<CR>`
-always opens what is focused. A surface may add keys beyond this table; it
-may never redefine one.
+Plotlines lanes — it means *add* (an edge, a scene attachment). On the
+Timeline surface `h`/`l` retime the focused placement (±1 coordinate,
+cycling ordinal axes) instead of cycling panes; `Tab` still cycles views
+everywhere. `<CR>` always opens what is focused. A surface may add keys
+beyond this table; it may never redefine one.
 
 ## TUI-added keys (storyteller-tui)
 

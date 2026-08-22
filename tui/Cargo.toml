@@ -11,6 +11,7 @@ crossterm = "0.28"
 anyhow = "1"
 termprofile = { version = "0.2", features = ["ratatui", "convert"] }
 unicode-width = "0.2"
+storyteller-core = { git = "https://github.com/AlejandroGomezFrieiro/storyteller.git", tag = "v1.3.0" }
 
 [[bin]]
 name = "storyteller-tui"
