@@ -1,0 +1,12 @@
+{
+  "name": "write-preserves-comments",
+  "files": {
+    "chapters/01.md": "# Chapter One\n\n## The warning\n\n```yaml\nstoryteller: scene\nid: abc123def456\n# a free-form comment\nday: 1\n```\n\nThe rain had not stopped.\n"
+  },
+  "ops": [
+    { "op": "set_field", "rel": "chapters/01.md", "raw_title": "The warning", "key": "pov", "value": "Odysseus" }
+  ],
+  "expect": {
+    "chapters/01.md": "# Chapter One\n\n## The warning\n\n```yaml\nstoryteller: scene\nid: abc123def456\n# a free-form comment\nday: 1\npov: Odysseus\n```\n\nThe rain had not stopped.\n"
+  }
+}

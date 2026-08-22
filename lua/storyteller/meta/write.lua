@@ -66,6 +66,10 @@ function M.chapter_write(path, patch)
 end
 
 -- Merge a patch into a scene's YAML block, creating the block if absent.
+-- Surgical patch of a scene's YAML block: replace/remove/insert exactly the
+-- patched key lines, leaving every other line (comments included) at its
+-- byte position. Table-valued patches fall back to a full re-encode; item-
+-- level list edits belong to the list_add/list_remove projection ops.
 function M.scene_write(scene, patch)
   local lines = vim.fn.readfile(scene.path)
   if not lines then
@@ -73,6 +77,7 @@ function M.scene_write(scene, patch)
   end
   local block = serde.parse_scene_block(lines, scene.start_line, scene.end_line or #lines)
   local meta = block.meta or {}
+
   for k, v in pairs(patch or {}) do
     if v == vim.NIL then
       meta[k] = nil
@@ -83,10 +88,105 @@ function M.scene_write(scene, patch)
   if not meta.id then
     meta.id = M.new_id(scene)
   end
+
+  -- Without an existing block the surgical path has nothing to patch: the
+  -- fallback creates one right after the heading (historical behavior).
+  if not block.yaml_start then
+    return M.scene_write_fallback(scene, meta, lines, scene.start_line + 1, scene.start_line)
+  end
+
+  local first, close = block.yaml_start, block.yaml_end
+  -- seg[t] mirrors file line (first + 1 + t); t runs 1..#seg.
+  local seg = {}
+  for i = first + 2, close - 1 do
+    seg[#seg + 1] = lines[i]
+  end
+
+  -- Top-level key ranges within seg (list items fold into their key's range).
+  local ranges = {}
+  local t = 1
+  while t <= #seg do
+    local key, value = seg[t]:match("^([%w_]+):%s*(.-)%s*$")
+    if key then
+      local stop = t
+      if value == "" then
+        while (seg[stop + 1] or ""):match("^%s*%-%s*") do
+          stop = stop + 1
+        end
+      end
+      ranges[key] = { start = t, stop = stop }
+      t = stop + 1
+    else
+      t = t + 1
+    end
+  end
+
+  local removed = {}
+  local additions = {}
+  for k, v in pairs(patch or {}) do
+    local r = ranges[k]
+    if v == vim.NIL then
+      if r then
+        for j = r.start, r.stop do
+          removed[j] = true
+        end
+      end
+    elseif type(v) == "table" then
+      -- Unsupported surgically; fall back below without touching anything.
+      removed = nil
+      break
+    else
+      local newline = ("%s: %s"):format(k, tostring(v))
+      if r then
+        seg[r.start] = newline
+        for j = r.start + 1, r.stop do
+          removed[j] = true
+        end
+      else
+        additions[#additions + 1] = newline
+      end
+    end
+  end
+
+  if removed ~= nil then
+    -- Ensure an id exists; written as the first content line, right after
+    -- the sentinel, without disturbing removal indices.
+    local ensure_id_line = nil
+    if not block.meta.id then
+      ensure_id_line = "id: " .. meta.id
+    end
+    table.sort(additions)
+    for _, ln in ipairs(additions) do
+      seg[#seg + 1] = ln
+    end
+
+    local out = {}
+    for i = 1, first + 1 do
+      out[i] = lines[i]
+    end
+    if ensure_id_line then
+      out[#out + 1] = ensure_id_line
+    end
+    for t = 1, #seg do
+      if not removed[t] then
+        out[#out + 1] = seg[t]
+      end
+    end
+    for i = close, #lines do
+      out[#out + 1] = lines[i]
+    end
+    writefile(scene.path, out)
+    return meta
+  end
+
+  return M.scene_write_fallback(scene, meta, lines, first, close)
+end
+
+-- Whole-block re-encode replacing file lines [close .. first] (an empty range
+-- when `close < first` creates a fresh block after the heading).
+function M.scene_write_fallback(scene, meta, lines, first, close)
   local replacement = serde.encode_scene(meta)
-  local first = block.yaml_start or (scene.start_line + 1)
-  local last = block.yaml_end or scene.start_line
-  for i = last, first, -1 do
+  for i = close, first, -1 do
     table.remove(lines, i)
   end
   for i = #replacement, 1, -1 do

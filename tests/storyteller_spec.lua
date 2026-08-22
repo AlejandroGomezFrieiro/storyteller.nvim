@@ -1207,5 +1207,45 @@ do
   vim.fn.delete(stmp, "rf")
 end
 
+-- === Projection golden fixtures (docs/projections.md): ops applied to
+-- fixture files must land byte-exact. Expectations are the Lua engine's
+-- own output, frozen; the TUI asserts identical bytes via cargo test.
+do
+  local projections = require("storyteller.projections")
+  local fixtures = vim.fn.glob("tests/projections/*.json", false, true)
+  table.sort(fixtures)
+  assert_true(#fixtures > 0, "projection golden fixtures exist")
+  for _, path in ipairs(fixtures) do
+    local okj, data = pcall(vim.json.decode, table.concat(vim.fn.readfile(path), "\n"))
+    if not okj or type(data) ~= "table" or type(data.files) ~= "table" then
+      assert_true(false, ("fixture %s decodes"):format(path))
+    else
+      local ftmp = vim.fn.tempname()
+      for rel, content in pairs(data.files) do
+        local full = ftmp .. "/" .. rel
+        vim.fn.mkdir(vim.fn.fnamemodify(full, ":h"), "p")
+        vim.fn.writefile(vim.split(content, "\n", { plain = true }), full)
+      end
+      vim.fn.writefile({}, ftmp .. "/.storyteller")
+      local fprj = project.resolve(ftmp)
+      local applied, err = projections.apply(data.name, fprj, data.ops)
+      if not applied then
+        assert_true(false, ("fixture %s applies: %s"):format(data.name, tostring(err)))
+      else
+        local all_ok = true
+        for rel, want in pairs(data.expect) do
+          local got = table.concat(vim.fn.readfile(ftmp .. "/" .. rel), "\n")
+          if got ~= want then
+            all_ok = false
+            print(("MISMATCH %s in %s\n--- got ---\n%s\n--- want ---\n%s"):format(rel, data.name, got, want))
+          end
+        end
+        assert_true(all_ok, ("fixture %s lands byte-exact (%d ops)"):format(data.name, applied))
+      end
+      vim.fn.delete(ftmp, "rf")
+    end
+  end
+end
+
 print(("RESULT: %d passed, %d failed"):format(passed, failed))
 os.exit(failed == 0 and 0 or 1)

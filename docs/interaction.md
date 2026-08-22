@@ -51,6 +51,28 @@ frontends in the same release.
   stage the diff first and report `N pending changes` before commit.
 - A failed apply leaves files untouched and surfaces the reason.
 
+## Verb scoping
+
+The grammar scopes verbs to surfaces. `a` advances a card's status on the
+corkboard, but on surfaces without status — the Relations canvas and
+Plotlines lanes — it means *add* (an edge, a scene attachment). `<CR>`
+always opens what is focused. A surface may add keys beyond this table; it
+may never redefine one.
+
+## TUI-added keys (storyteller-tui)
+
+These extend the grammar inside specific TUI tabs and are aliases nowhere
+else:
+
+| Key | Tab | Action |
+| --- | --- | --- |
+| `t` | Timeline | Cycle the focused axis: implicit `main`, then each timeline card. |
+| `o` | Timeline | Toggle Reading order ⇄ Story order (both first-class views). |
+| `w` | Timeline | Cycle swimlane grouping: off / POV / location / chapter. |
+| `s` | Timeline | Mark two rows and swap their coordinates. |
+| `v` | Plotlines | Switch Lanes ⇄ Threads modes. |
+| `p` | Plotlines | Toggle the read-only plot grid (scenes × plotlines). |
+
 ## Safety
 
 - Before any apply that moves scenes between files or rewrites more than one

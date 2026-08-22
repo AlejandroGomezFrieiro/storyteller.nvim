@@ -41,6 +41,8 @@ Every edit a user can make to a projection reduces to these ops:
 | `reorder` | `{ files = { [rel] = {titles...} } }` | The complete per-file scene sequence for every chapter. Scenes may move between files freely; vacated files lose the moved blocks. Applied atomically after full validation. |
 | `set_field` | `{ raw_title, key, value }` | Write one scene YAML field (`value = nil` removes it). The scene is located by its heading text. |
 | `set_chapter_field` | `{ path, key, value }` | Write chapter frontmatter (e.g. `synopsis:`). |
+| `list_add` | `{ raw_title, key, value }` | Append one item to a scene's YAML list (`plotlines:`, `also:`, `setup:`, `payoff:`, …) without touching sibling entries. List values are opaque strings; flow maps stay verbatim text. |
+| `list_remove` | `{ raw_title, key, value }` | Remove the single matching item from a scene's YAML list. |
 
 Scene identity inside ops: the raw H2 heading text (render disambiguators
 ` #N` are stripped). Duplicate headings across chapters are rejected.
@@ -89,21 +91,53 @@ words: 380
 ### `timeline`
 
 ```
-# Timeline · story time
+# Timeline · Present · days
 
-day | title              | pov      | words
-----+--------------------+----------+------
-1   | The warning        | Odysseus | 412
-2   | The storm          | Odysseus | 380
-·   | The omen           | Athena   | 95
+coord | title              | pov      | words
+------+--------------------+----------+------
+12    | The crossing       | Odysseus | 412
+40    | The omen           | Athena   | 95
+·     | Unplaced draft     | —        | 30
 ```
 
-- One row per scene, sorted by numeric `day:`; unscheduled rows sort last with
-  `·` in the day column.
-- Writable cells: day (`nil` clears), title is identity-only, everything else
-  read-only.
-- `J`/`K` on a row shift its day ±1 (the frontend edits the cell; the op is
-  always `set_day`). Row moves are normalized away — order follows days.
+- One row per **placement** on the focused axis (schema v1.2): a scene's
+  primary `timeline:` placement plus every `also:` entry. `render(name, prj)`
+  renders the implicit `main` axis; `render("timeline:" .. axis, prj)` renders
+  another. The header names the axis and its declared `unit`.
+- Rows sort by coordinate rank — numerically when numeric, by the axis's
+  `order:` sequence when ordinal — then manuscript order; unplaced rows sort
+  last with `·` in the coordinate column.
+- The coordinate cell shows whichever of `at:`/`day:`/`time:` holds it.
+  Editing the cell writes back to that same field (`set_field coord-key`);
+  clearing it removes the field. Secondary placements are edited through
+  `list_add`/`list_remove` on `also:`, never by rewriting the cell.
+- Non-linear narrative modes carry a dim `~` prefix and are exempt from any
+  ordering judgment; the projection never reorders the manuscript itself.
+
+### `plotlines`
+
+```
+# Plotlines
+
+## Telemachy ·→ arc_of Telemachus
+○ helpless    | Book I — Visit of Pallas
+● companion   | Book III — The prince
+░ gathering   | (unreached)
+```
+
+- One lane (`##`) per plotline card; lane rows are attached scenes in
+  manuscript order as `<pill> <stage> | <scene title>`, where the pill is
+  `○`. A scene attached to more than one lane carries `◆` instead.
+- `(unreached)` ghost rows annotate declared stages no scene reaches; they
+  are read-only annotations — diffs ignore them, apply never writes them.
+- Editing: attaching a scene adds a row (`list_add plotlines` + optional
+  `set_field stage`), detaching removes it (`list_remove plotlines`), and a
+  stage edit is `set_field stage`. Deleting or renaming a lane's card is an
+  editor concern, not a projection op.
+- A project with no plotline cards renders the threads fallback instead:
+  one lane per setup/payoff thread key with states `✓ complete`,
+  `○ needs payoff`, `△ needs setup` — same row grammar, sides in place of
+  stages.
 
 ### `synopsis`
 

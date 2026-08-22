@@ -1,0 +1,12 @@
+{
+  "name": "timeline-set-day",
+  "files": {
+    "chapters/01.md": "# Chapter One\n\n## The warning\n\n```yaml\nstoryteller: scene\nid: abc123def456\nday: 1\npov: Odysseus\n```\n\nThe rain had not stopped.\n\n## The storm\n\n```yaml\nstoryteller: scene\nid: def789abc012\nstatus: done\n```\n\nWords words words.\n"
+  },
+  "ops": [
+    { "op": "set_field", "rel": "chapters/01.md", "raw_title": "The warning", "key": "day", "value": "5" }
+  ],
+  "expect": {
+    "chapters/01.md": "# Chapter One\n\n## The warning\n\n```yaml\nstoryteller: scene\nid: abc123def456\nday: 5\npov: Odysseus\n```\n\nThe rain had not stopped.\n\n## The storm\n\n```yaml\nstoryteller: scene\nid: def789abc012\nstatus: done\n```\n\nWords words words.\n"
+  }
+}
