@@ -6,6 +6,7 @@
 //! editor's projection buffers; this app is the glance-and-review surface.
 
 mod project;
+mod relations;
 mod store;
 mod theme;
 mod ui;
@@ -101,9 +102,18 @@ fn main() -> Result<()> {
     let mut tab = Tab::Dashboard;
     let mut list_state = ratatui::widgets::ListState::default();
     let mut hud_message: Option<String> = None;
+    let mut rel = ui::RelState::default();
     let mut quit = false;
 
     while !quit {
+        // Relations view model (rebuilt per frame; card sets are small).
+        let rel_view = relations::RelView::build(&prj.cards, rel.filter.as_deref(), rel.hide_orphans);
+        if rel.pane == ui::Pane::Inspector {
+            let node_i = rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
+            let edges = rel_view.graph.edges_of(node_i).len();
+            rel.edge = rel.edge.min(edges.saturating_sub(1));
+        }
+
         let axis_names = ui::axis_list(&prj, &axes);
         let axis_name = axis_names
             .get(tl.axis.min(axis_names.len() - 1))
@@ -122,6 +132,16 @@ fn main() -> Result<()> {
             PromptKind::Placement => {
                 format!("placement axis@coord: {buf}▏ (Enter stage · Esc cancel)")
             }
+            PromptKind::EdgeTarget { .. } => {
+                format!("edge target: {buf}▏ (Enter continue · Esc cancel)")
+            }
+            PromptKind::EdgeKind { to, .. } => {
+                format!("kind for “{to}”: {buf}▏ (Enter stage · Esc cancel)")
+            }
+            PromptKind::RenameKind { to, .. } => {
+                format!("rename kind of “{to}” to: {buf}▏ (Enter stage · Esc cancel)")
+            }
+            PromptKind::Filter => format!("filter: {buf}▏ (Enter apply · Esc clear)"),
         });
         let hud = ui::Hud {
             pending: store.pending(),
@@ -129,7 +149,8 @@ fn main() -> Result<()> {
         };
         terminal.draw(|f| {
             let ctx_ref = (tab == Tab::Timeline).then_some(&tl_ctx);
-            ui::render(f, &prj, &tab, &mut list_state, &theme, &hud, ctx_ref)
+            let rel_ref = (tab == Tab::Relations).then_some((&rel, &rel_view));
+            ui::render(f, &prj, &tab, &mut list_state, &theme, &hud, ctx_ref, rel_ref)
         })?;
         match event::read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
@@ -172,6 +193,42 @@ fn main() -> Result<()> {
                                         continue;
                                     }
                                 }
+                                PromptKind::EdgeTarget { file, line } => {
+                                    prompt = Some((
+                                        PromptKind::EdgeKind {
+                                            file,
+                                            line,
+                                            to: text,
+                                        },
+                                        String::new(),
+                                    ));
+                                    continue;
+                                }
+                                PromptKind::EdgeKind { file, line, to } => {
+                                    store.stage(store::Op::AddEdge {
+                                        card: store::CardRef { file, line },
+                                        to,
+                                        kind: text,
+                                    });
+                                    hud_message = Some("staged edge — S to apply".into());
+                                }
+                                PromptKind::RenameKind { file, line, to } => {
+                                    store.stage(store::Op::RenameEdge {
+                                        card: store::CardRef { file, line },
+                                        to,
+                                        kind: text,
+                                    });
+                                    hud_message = Some("staged rename — S to apply".into());
+                                }
+                                PromptKind::Filter => {
+                                    if text.is_empty() {
+                                        rel.filter = None;
+                                    } else {
+                                        rel.filter = Some(text.clone());
+                                    }
+                                    rel.node = 0;
+                                    hud_message = Some(format!("filter: {}", text));
+                                }
                             }
                         }
                         KeyCode::Backspace => {
@@ -213,21 +270,144 @@ fn main() -> Result<()> {
                         }
                         Err(e) => hud_message = Some(format!("reload failed: {e}")),
                     },
-                    KeyCode::Char('j') | KeyCode::Down => {
+                    KeyCode::Char('j') | KeyCode::Down if tab != Tab::Relations => {
                         list_state.select_next();
                     }
-                    KeyCode::Char('k') | KeyCode::Up => {
+                    KeyCode::Char('k') | KeyCode::Up if tab != Tab::Relations => {
                         list_state.select_previous();
                     }
                     // On the Timeline surface h/l retime (scoped verb);
                     // elsewhere they cycle tabs. Tab always cycles views.
-                    KeyCode::Tab => tab = tab.next(),
+                    KeyCode::Tab if tab != Tab::Relations => tab = tab.next(),
                     KeyCode::Char('l') if tab != Tab::Timeline => tab = tab.next(),
                     KeyCode::Char('h') if tab != Tab::Timeline => {
                         tab = match tab {
                             Tab::Dashboard => Tab::Timeline,
                             Tab::Corkboard => Tab::Dashboard,
                             Tab::Timeline => Tab::Corkboard,
+                            Tab::Relations => Tab::Dashboard,
+                        }
+                    }
+                    // Relations-surface verbs (docs/rework-plan.md §F):
+                    KeyCode::Tab if tab == Tab::Relations => {
+                        rel.pane = match rel.pane {
+                            ui::Pane::Graph => ui::Pane::Inspector,
+                            ui::Pane::Inspector => ui::Pane::Graph,
+                        };
+                        rel.edge = 0;
+                    }
+                    KeyCode::Char('j') | KeyCode::Down if tab == Tab::Relations => {
+                        match rel.pane {
+                            ui::Pane::Graph => {
+                                rel.node = rel_view.clamp(rel.node + 1);
+                            }
+                            ui::Pane::Inspector => {
+                                rel.edge += 1;
+                            }
+                        }
+                    }
+                    KeyCode::Char('k') | KeyCode::Up if tab == Tab::Relations => {
+                        match rel.pane {
+                            ui::Pane::Graph => {
+                                rel.node = rel.node.saturating_sub(1);
+                            }
+                            ui::Pane::Inspector => {
+                                rel.edge = rel.edge.saturating_sub(1);
+                            }
+                        }
+                    }
+                    KeyCode::Char('h') if tab == Tab::Relations && rel.pane == ui::Pane::Graph => {
+                        let node_i =
+                            rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
+                        let next = rel_view.graph.step_dir(node_i, crate::relations::Dir::Left);
+                        rel.node = rel_view
+                            .order_visible()
+                            .iter()
+                            .position(|n| *n == next)
+                            .unwrap_or(rel.node);
+                    }
+                    KeyCode::Char('l') if tab == Tab::Relations && rel.pane == ui::Pane::Graph => {
+                        let node_i =
+                            rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
+                        let next = rel_view.graph.step_dir(node_i, crate::relations::Dir::Right);
+                        rel.node = rel_view
+                            .order_visible()
+                            .iter()
+                            .position(|n| *n == next)
+                            .unwrap_or(rel.node);
+                    }
+                    KeyCode::Char('/') if tab == Tab::Relations => {
+                        prompt = Some((PromptKind::Filter, String::new()));
+                    }
+                    KeyCode::Char('o') if tab == Tab::Relations => {
+                        rel.hide_orphans = !rel.hide_orphans;
+                        rel.node = 0;
+                    }
+                    KeyCode::Char('a')
+                        if tab == Tab::Relations && rel.pane == ui::Pane::Graph =>
+                    {
+                        let node_i =
+                            rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
+                        if let Some(node) = rel_view.graph.nodes.get(node_i) {
+                            if let (Some(file), Some(line)) = (&node.file, Some(node.heading_line)) {
+                                prompt = Some((
+                                    PromptKind::EdgeTarget { file: file.clone(), line },
+                                    String::new(),
+                                ));
+                            } else {
+                                hud_message = Some("ghost nodes have no card".into());
+                            }
+                        }
+                    }
+                    KeyCode::Char('e') | KeyCode::Char('x')
+                        if tab == Tab::Relations && rel.pane == ui::Pane::Inspector =>
+                    {
+                        let node_i =
+                            rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
+                        let edges = rel_view.graph.edges_of(node_i);
+                        let Some(&(ei, _)) = edges.get(rel.edge) else {
+                            hud_message = Some("no edge selected".into());
+                            continue;
+                        };
+                        let e = &rel_view.graph.edges[ei];
+                        let target_name = rel_view.graph.nodes[e.to].name.clone();
+                        let anchor = &rel_view.graph.nodes[e.from];
+                        let Some(file) = &anchor.file else {
+                            hud_message = Some("edge has no card anchor".into());
+                            continue;
+                        };
+                        let card = store::CardRef {
+                            file: file.clone(),
+                            line: anchor.heading_line,
+                        };
+                        match key.code {
+                            KeyCode::Char('e') => {
+                                prompt = Some((
+                                    PromptKind::RenameKind {
+                                        file: card.file,
+                                        line: card.line,
+                                        to: target_name.clone(),
+                                    },
+                                    e.kind.clone(),
+                                ));
+                            }
+                            _ => {
+                                store.stage(store::Op::RemoveEdge {
+                                    card,
+                                    to: target_name.clone(),
+                                });
+                                hud_message =
+                                    Some("staged edge removal — S to apply".into());
+                            }
+                        }
+                    }
+                    KeyCode::Enter if tab == Tab::Relations => {
+                        let node_i =
+                            rel_view.order_visible().get(rel.node).copied().unwrap_or(0);
+                        if let Some(node) = rel_view.graph.nodes.get(node_i) {
+                            if let Some(file) = &node.file {
+                                open_in_editor(std::path::Path::new(file), node.heading_line + 1)?;
+                            }
                         }
                     }
                     KeyCode::Char('1') => tab = Tab::Dashboard,
@@ -372,6 +552,10 @@ fn load_axes(path: &std::path::Path) -> storyteller_core::axes::Axes {
 enum PromptKind {
     Coordinate,
     Placement,
+    EdgeTarget { file: String, line: usize },
+    EdgeKind { file: String, line: usize, to: String },
+    RenameKind { file: String, line: usize, to: String },
+    Filter,
 }
 
 // The selectable (non-header) row under the cursor.

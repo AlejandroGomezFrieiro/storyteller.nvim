@@ -44,6 +44,29 @@ pub struct Track {
     pub arc_of: Option<String>,
 }
 
+/// One `relations:` edge off a card frontmatter.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Edge {
+    pub to: String,
+    pub kind: String,
+}
+
+/// A reference card under references/<type>/.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct Card {
+    pub path: PathBuf,
+    /// 0-based line of the card's heading (the store anchors edits here).
+    pub heading_line: usize,
+    pub name: String,
+    pub rtype: String,
+    pub aliases: Vec<String>,
+    pub edges: Vec<Edge>,
+    /// Prose mentions across chapters (alias set, case-insensitive).
+    pub mentions: usize,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct Chapter {
@@ -62,6 +85,7 @@ pub struct Project {
     pub chapters: Vec<Chapter>,
     pub scenes: Vec<Scene>,
     pub tracks: Vec<Track>,
+    pub cards: Vec<Card>,
     pub total_words: usize,
 }
 
@@ -204,7 +228,6 @@ fn load_tracks(root: &Path) -> Vec<Track> {
     let mut out = Vec::new();
     for p in list_md(&root.join("references/plotlines")).unwrap_or_default() {
         let meta = card_meta(&p);
-        if std::env::var("ST_DEBUG").is_ok() { eprintln!("track {:?} meta = {:?}", p, meta); }
         let stages = meta.get("stages").cloned().unwrap_or_default();
         let arc_of = meta.get("relations").and_then(|rels| {
             rels.iter()
@@ -227,6 +250,110 @@ fn load_tracks(root: &Path) -> Vec<Track> {
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
+}
+
+/// Parse one `relations:` frontmatter item (flow map, `to:`/`kind:` pair, or
+/// shorthand `- spouse: X`) into an edge.
+fn parse_edge(item: &str) -> Option<Edge> {
+    let trimmed = item.trim();
+    if let Some(inner) = trimmed.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+        let mut to = None;
+        let mut kind = "related".to_string();
+        for part in inner.split(',') {
+            let (k, v) = part.split_once(':')?;
+            match k.trim() {
+                "to" => to = Some(v.trim().to_string()),
+                "kind" => kind = v.trim().to_string(),
+                _ => {}
+            }
+        }
+        return to.map(|t| Edge { to: t, kind });
+    }
+    let (k, v) = trimmed.split_once(':')?;
+    let target = v.trim().to_string();
+    if target.is_empty() {
+        return None;
+    }
+    if k.trim() == "to" {
+        Some(Edge { to: target, kind: "related".into() })
+    } else {
+        Some(Edge { to: target, kind: k.trim().to_string() })
+    }
+}
+
+/// All reference cards with prose mention counts over the given chapters.
+fn load_cards(root: &Path, chapter_texts: &[(PathBuf, String)]) -> Vec<Card> {
+    let refs_dir = root.join("references");
+    let Ok(dirs) = fs::read_dir(&refs_dir) else { return Vec::new() };
+    let mut cards = Vec::new();
+    for entry in dirs.flatten() {
+        let rtype = entry.file_name().to_string_lossy().to_string();
+        if rtype.starts_with('_') || rtype.starts_with('.') || !entry.path().is_dir() {
+            continue;
+        }
+        for p in list_md(&entry.path()).unwrap_or_default() {
+            let text = match fs::read_to_string(&p) {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            let lines: Vec<&str> = text.lines().collect();
+            let heading_line = lines
+                .iter()
+                .take(16)
+                .position(|l| l.starts_with("# ") || l.starts_with("## "))
+                .map(|pos| pos + 1)
+                .unwrap_or(0);
+            let meta = card_meta(&p);
+            let name = card_name(&p, &meta);
+            let mut aliases: Vec<String> = meta.get("names").cloned().unwrap_or_default();
+            aliases.push(name.clone());
+            let edges = meta
+                .get("relations")
+                .map(|rels| rels.iter().filter_map(|r| parse_edge(r)).collect())
+                .unwrap_or_default();
+            // Mentions: any alias appearing as a token-bounded phrase in the
+            // chapters (case-insensitive).
+            let mut mentions = 0;
+            for (_, chapter_text) in chapter_texts {
+                let lower = chapter_text.to_lowercase();
+                for alias in &aliases {
+                    let a = alias.to_lowercase();
+                    if a.is_empty() {
+                        continue;
+                    }
+                    let mut from = 0;
+                    while let Some(pos) = lower[from..].find(&a) {
+                        let abs = from + pos;
+                        let before = lower[..abs]
+                            .chars()
+                            .next_back()
+                            .map(|c| !c.is_alphanumeric())
+                            .unwrap_or(true);
+                        let after = lower[abs + a.len()..]
+                            .chars()
+                            .next()
+                            .map(|c| !c.is_alphanumeric())
+                            .unwrap_or(true);
+                        if before && after {
+                            mentions += 1;
+                        }
+                        from = abs + a.len().max(1);
+                    }
+                }
+            }
+            cards.push(Card {
+                path: p,
+                heading_line,
+                name,
+                rtype: rtype.clone(),
+                aliases,
+                edges,
+                mentions,
+            });
+        }
+    }
+    cards.sort_by(|a, b| a.rtype.cmp(&b.rtype).then(a.name.cmp(&b.name)));
+    cards
 }
 
 fn list_md(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -290,8 +417,10 @@ fn finalize_scene(mut sc: Scene, block: &[&str]) -> Scene {
 
 pub fn load(root: &Path) -> Result<Project> {
     let mut prj = Project { root: root.to_path_buf(), ..Default::default() };
+    let mut chapter_texts: Vec<(PathBuf, String)> = Vec::new();
     for file in list_md(&root.join("chapters"))? {
         let text = fs::read_to_string(&file)?;
+        chapter_texts.push((file.clone(), text.clone()));
         let lines: Vec<&str> = text.lines().collect();
         let mut chapter = Chapter {
             title: file.file_stem().unwrap_or_default().to_string_lossy().to_string(),
@@ -379,6 +508,7 @@ pub fn load(root: &Path) -> Result<Project> {
         prj.chapters.push(chapter);
     }
     prj.tracks = load_tracks(root);
+    prj.cards = load_cards(root, &chapter_texts);
     Ok(prj)
 }
 

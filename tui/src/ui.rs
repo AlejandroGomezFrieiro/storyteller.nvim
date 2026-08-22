@@ -5,6 +5,7 @@
 
 use crate::project::Project;
 use crate::theme::{status_glyph, Slot, Theme};
+use unicode_width::UnicodeWidthStr;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     text::{Line, Span},
@@ -17,6 +18,7 @@ pub enum Tab {
     Dashboard,
     Corkboard,
     Timeline,
+    Relations,
 }
 
 /// Transient chrome the frame renders from app state: staged-edit counters
@@ -27,15 +29,20 @@ pub struct Hud<'a> {
     pub message: Option<&'a str>,
 }
 
-const TAB_TITLES: [(&str, &str); 3] =
-    [("1", "Dashboard"), ("2", "Corkboard"), ("3", "Timeline")];
+const TAB_TITLES: [(&str, &str); 4] = [
+    ("1", "Dashboard"),
+    ("2", "Corkboard"),
+    ("3", "Timeline"),
+    ("4", "Relations"),
+];
 
 impl Tab {
     pub fn next(&self) -> Self {
         match self {
             Tab::Dashboard => Tab::Corkboard,
             Tab::Corkboard => Tab::Timeline,
-            Tab::Timeline => Tab::Dashboard,
+            Tab::Timeline => Tab::Relations,
+            Tab::Relations => Tab::Dashboard,
         }
     }
 
@@ -43,7 +50,8 @@ impl Tab {
         match self {
             Tab::Dashboard => 0,
             Tab::Corkboard => 1,
-            _ => 2,
+            Tab::Timeline => 2,
+            _ => 3,
         }
     }
 
@@ -52,14 +60,14 @@ impl Tab {
         match self {
             Tab::Dashboard => vec![
                 ("j/k", "chapters"),
-                ("o", "open"),
+                ("CR", "open"),
                 ("Tab", "views"),
                 ("R", "refresh"),
                 ("q", "quit"),
             ],
             Tab::Corkboard => vec![
                 ("j/k", "scenes"),
-                ("o", "open"),
+                ("CR", "open"),
                 ("/", "filter"),
                 ("Tab", "views"),
                 ("R", "reload"),
@@ -67,11 +75,19 @@ impl Tab {
             ],
             Tab::Timeline => vec![
                 ("j/k", "rows"),
-                ("o", "open"),
+                ("t", "axis"),
+                ("o", "order"),
+                ("w", "lanes"),
+                ("h/l", "retime"),
+                ("S/u", "staging"),
+            ],
+            Tab::Relations => vec![
+                ("Tab", "panes"),
+                ("j/k", "nodes/edges"),
+                ("h/l", "walk"),
+                ("a/e/x", "edges"),
                 ("/", "filter"),
-                ("Tab", "views"),
                 ("R", "reload"),
-                ("q", "quit"),
             ],
         }
     }
@@ -100,8 +116,7 @@ fn project_name(prj: &Project) -> String {
 
 /// Truncate to `width` display columns, appending an ellipsis when cut.
 fn fit(text: &str, width: usize) -> String {
-    use unicode_width::UnicodeWidthStr;
-    let w = text.width();
+        let w = text.width();
     if w <= width {
         return format!("{text:w$}");
     }
@@ -128,6 +143,7 @@ fn words_compact(words: usize) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render(
     f: &mut Frame,
     prj: &Project,
@@ -136,6 +152,7 @@ pub fn render(
     theme: &Theme,
     hud: &Hud,
     tl_ctx: Option<&TlCtx<'_>>,
+    rel: Option<(&RelState, &crate::relations::RelView)>,
 ) {
     let area = f.area();
     let class = width_class(area.width);
@@ -166,6 +183,11 @@ pub fn render(
 
     match tab {
         Tab::Dashboard => dashboard(f, prj, body, theme, class),
+        Tab::Relations => {
+            if let Some((state, view)) = rel {
+                relations(f, prj, body, theme, class, state, view);
+            }
+        }
         Tab::Corkboard => corkboard(f, prj, body, list_state, theme, class),
         Tab::Timeline => {
             if let Some(ctx) = tl_ctx {
@@ -677,6 +699,141 @@ fn timeline(
     f.render_stateful_widget(list, area, list_state);
 }
 
+// --- Relations ---------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Pane {
+    Graph,
+    Inspector,
+}
+
+/// Relations tab state owned by the app.
+pub struct RelState {
+    /// Focus position within the visible order (see `relations::RelView`).
+    pub node: usize,
+    pub pane: Pane,
+    /// Selected edge within the focused node's inspector list.
+    pub edge: usize,
+    pub filter: Option<String>,
+    pub hide_orphans: bool,
+}
+
+impl Default for RelState {
+    fn default() -> Self {
+        RelState { node: 0, pane: Pane::Graph, edge: 0, filter: None, hide_orphans: false }
+    }
+}
+
+fn relations(
+    f: &mut Frame,
+    _prj: &Project,
+    area: Rect,
+    theme: &Theme,
+    class: WidthClass,
+    rel: &RelState,
+    view: &crate::relations::RelView,
+) {
+    let graph = &view.graph;
+    let order = view.order_visible();
+    if order.is_empty() {
+        f.render_widget(
+            Line::from(Span::styled("no cards match — / to clear the filter", theme.dim())),
+            centered(area),
+        );
+        return;
+    }
+    let node_i = order[rel.node.min(order.len() - 1)];
+
+    // Two panes at comfortable widths; graph-only when compact.
+    let (graph_area, inspector_area) = if class == WidthClass::Compact || area.width < 80 {
+        (area, None)
+    } else {
+        let [left, right] =
+            Layout::horizontal([Constraint::Percentage(62), Constraint::Min(24)]).areas(area);
+        (left, Some(right))
+    };
+
+    let canvas = ratatui::widgets::canvas::Canvas::default()
+        .x_bounds([0.0, 1.0])
+        .y_bounds([0.0, 1.0])
+        .paint(|ctx| {
+            for e in &graph.edges {
+                let (x0, y0) = graph.positions[e.from];
+                let (x1, y1) = graph.positions[e.to];
+                ctx.draw(&ratatui::widgets::canvas::Line {
+                    x1,
+                    y1,
+                    x2: x0,
+                    y2: y0,
+                    color: theme.border().fg.unwrap_or(ratatui::style::Color::DarkGray),
+                });
+            }
+            for (i, ni) in order.iter().enumerate() {
+                let node = &graph.nodes[*ni];
+                let (x, y) = graph.positions[*ni];
+                let focused = *ni == node_i;
+                ctx.draw(&ratatui::widgets::canvas::Points {
+                    coords: &[(x, y)],
+                    color: if focused {
+                        theme.accent().fg.unwrap_or(ratatui::style::Color::Yellow)
+                    } else if node.rtype == "?" {
+                        ratatui::style::Color::DarkGray
+                    } else {
+                        theme.text().fg.unwrap_or(ratatui::style::Color::Gray)
+                    },
+                });
+                use unicode_width::UnicodeWidthStr;
+                let label = if node.rtype == "?" {
+                    format!("{}?", node.name)
+                } else {
+                    node.name.clone()
+                };
+                let _ = i;
+                ctx.print(
+                    x - (label.width() as f64) * 0.004,
+                    y + 0.02,
+                    Span::styled(label, if focused { theme.accent_plain() } else { theme.dim() }),
+                );
+            }
+        });
+    f.render_widget(canvas, graph_area);
+
+    if let Some(inspector) = inspector_area {
+        let node = &graph.nodes[node_i];
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled(format!("◆ {} ", node.name), theme.text_bold()),
+                Span::styled(format!("· {}", node.rtype), theme.dim()),
+            ]),
+            Line::from(Span::styled(format!("{} mentions", node.mentions), theme.dim())),
+        ];
+        let edges_of = graph.edges_of(node_i);
+        lines.push(Line::from(Span::styled("edges:", theme.dim())));
+        if edges_of.is_empty() {
+            lines.push(Line::from(Span::styled("  (none)", theme.dim())));
+        }
+        for (i, (ei, outgoing)) in edges_of.iter().enumerate() {
+            let e = &graph.edges[*ei];
+            let other = if *outgoing { e.to } else { e.from };
+            let mut spans = vec![Span::raw(format!(
+                "  {} {} {:?} ",
+                if rel.edge == i { "▸" } else { " " },
+                e.kind,
+                graph.nodes[other].name
+            ))];
+            if graph.nodes[other].rtype == "?" {
+                spans.push(Span::styled("(unresolved)", theme.slot_fg(Slot::Warning)));
+            }
+            lines.push(Line::from(spans));
+        }
+        lines.push(Line::from(Span::styled(
+            "a add · e rename · x delete · Tab back",
+            theme.dim(),
+        )));
+        f.render_widget(Paragraph::new(lines), inspector);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -722,6 +879,7 @@ mod tests {
                 },
             ],
             tracks: Vec::new(),
+            cards: Vec::new(),
             total_words: 6120,
         }
     }
@@ -752,7 +910,7 @@ mod tests {
                 if *tab != Tab::Timeline {
                     tl_ctx = None;
                 }
-                render(f, prj, tab, &mut ls, theme, &Hud::default(), tl_ctx)
+                render(f, prj, tab, &mut ls, theme, &Hud::default(), tl_ctx, None)
             })
             .unwrap();
         terminal
@@ -789,6 +947,7 @@ mod tests {
                     Tab::Timeline => {
                         assert!(text.contains("The warning"), "timeline rows at {width}")
                     }
+                    Tab::Relations => {}
                 }
             }
         }
@@ -815,7 +974,7 @@ mod tests {
         let mut ls = ListState::default();
         let hud = Hud { pending: 2, message: None };
         terminal
-            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None))
+            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None, None))
             .unwrap();
         let text: String = terminal
             .backend()
@@ -832,7 +991,7 @@ mod tests {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
-            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None))
+            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None, None))
             .unwrap();
         let text: String = terminal
             .backend()
