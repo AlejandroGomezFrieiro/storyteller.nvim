@@ -65,7 +65,9 @@ local function card_bounds(lines, lnum)
 end
 
 -- Shift the day cell of the timeline row under the cursor by `delta`
--- (staged until :w). Unscheduled rows (·) are left alone.
+-- (staged until :w). Unscheduled rows (·) and non-numeric coordinates
+-- (ordinal axes, secondary placements) are refused — there is no neighbor
+-- relation to infer for them.
 function M.shift_day(delta)
   local buf = vim.api.nvim_get_current_buf()
   local b = board(buf)
@@ -82,10 +84,17 @@ function M.shift_day(delta)
   if not day then
     return
   end
+  if day:sub(-1) == "*" then
+    vim.notify(
+      "[storyteller] Secondary (also:) placement — edit it in the scene YAML.",
+      vim.log.levels.INFO
+    )
+    return
+  end
   local value = tonumber(day)
   if not value then
     vim.notify(
-      "[storyteller] Unscheduled row — type a day number to schedule it.",
+      "[storyteller] Non-numeric coordinate — retime ordinal axes in the scene YAML.",
       vim.log.levels.INFO
     )
     return

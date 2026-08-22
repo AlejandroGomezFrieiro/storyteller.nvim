@@ -144,6 +144,45 @@ local function write_beat(path, beat, act_number)
   return true
 end
 
+-- The template's beats in order; also the stage sequence of its plotline card.
+local function beats_of(t)
+  local out = {}
+  for _, part in ipairs(t.structure or {}) do
+    for _, beat in ipairs(part.children or {}) do
+      out[#out + 1] = tostring(beat.title)
+    end
+  end
+  return out
+end
+
+-- One track card per template under references/plotlines/, with the beat
+-- sequence as its `stages:` list (schema v1.2). Skips existing files.
+function M.plotline_card(prj, t)
+  local beats = beats_of(t)
+  if #beats == 0 then
+    return nil
+  end
+  local dir = join(prj.root, "references", "plotlines")
+  local path = join(dir, slugify(t.id) .. ".md")
+  if vim.loop.fs_stat(path) then
+    return nil
+  end
+  local lines = {}
+  vim.list_extend(
+    lines,
+    meta.serde.encode_frontmatter({ names = { t.name or t.id }, stages = beats })
+  )
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = "## " .. tostring(t.name or t.id)
+  if t.description and t.description ~= "" then
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = t.description
+  end
+  vim.fn.mkdir(dir, "p")
+  vim.fn.writefile(lines, path)
+  return path
+end
+
 -- Compute what `apply` would create without writing anything.
 function M.plan(prj, name)
   prj = prj or project.current()
@@ -196,6 +235,9 @@ M.apply = function(prj, name)
         skipped = skipped + 1
       end
     end
+  end
+  if M.plotline_card(prj, plan.template) then
+    created = created + 1
   end
   vim.notify(
     ("[storyteller] Template '%s' applied: %d chapters created, %d skipped"):format(

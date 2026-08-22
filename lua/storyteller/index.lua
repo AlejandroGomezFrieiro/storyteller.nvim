@@ -171,14 +171,19 @@ end
 
 -- A reference card: H1/H2 title (template cards use `## Name — Role`), plus
 -- `names:` aliases from frontmatter. The primary name is the leading token
--- before an em/en-dash or colon.
+-- before an em/en-dash or colon. Card fields read from either form —
+-- `- **Key:** value` bullets or `### Key` heading sections (spec/metadata.md,
+-- "Fields: bullets or headings") — into one case-insensitive map where the
+-- first occurrence wins.
 local function parse_reference(path)
   local lines = cached_lines(path)
   local title = nil
+  local title_i = nil
   for i = 1, math.min(#lines, 16) do
     local h = lines[i]:match("^#+%s+(.*)$")
     if h then
       title = h
+      title_i = i
       break
     end
   end
@@ -190,7 +195,49 @@ local function parse_reference(path)
   if #names == 0 then
     names = { name }
   end
-  return { path = path, title = title, name = name, names = names, meta = doc and doc.meta or {} }
+  -- Unified field view: `### Key` sections ∪ `- **Key:**` bullets below the
+  -- card's own title. First form seen for a key (case-insensitive) wins.
+  local fields = {}
+  local function add(key, value)
+    local k = key:lower()
+    if fields[k] == nil then
+      fields[k] = { key = key, value = value }
+    end
+  end
+  if title_i then
+    local section_key, section_value = nil, {}
+    local function flush()
+      if section_key then
+        add(section_key, vim.trim(table.concat(section_value, " ")))
+      end
+      section_key, section_value = nil, {}
+    end
+    for i = title_i + 1, #lines do
+      local ln = lines[i]
+      local head = ln:match("^#+%s+(.*)$")
+      if head then
+        flush()
+        section_key, section_value = head, {}
+      else
+        local bullet_key, bullet_value = ln:match("^%-%s*%*%*([^*]+):%*%*%s*(.*)$")
+        if bullet_key then
+          flush()
+          add(bullet_key, bullet_value)
+        elseif section_key and ln ~= "" then
+          section_value[#section_value + 1] = ln
+        end
+      end
+    end
+    flush()
+  end
+  return {
+    path = path,
+    title = title,
+    name = name,
+    names = names,
+    meta = doc and doc.meta or {},
+    fields = fields,
+  }
 end
 
 -- --- Public API -------------------------------------------------------------
@@ -338,33 +385,134 @@ end
 
 -- Scenes ordered by numeric story time when available. Free-form time keeps
 -- manuscript order so the timeline never invents chronology.
-M.timeline = function(prj)
+--
+-- With an axis name, rows become placements on that axis (schema v1.2): the
+-- primary coordinate of scenes declared there (`timeline:`), plus every
+-- `also:` placement addressed to it. Secondary rows share their scene and are
+-- marked `timeline_secondary`.
+M.timeline = function(prj, axis)
+  axis = axis or "main"
+  -- Ordinal ranks come from the axis card's `order:` sequence when declared.
+  local ameta
+  for _, a in ipairs(M.timeline_axes(prj)) do
+    if a.name:lower() == axis:lower() then
+      ameta = a
+    end
+  end
+  local function rank_of(value)
+    if not ameta or #ameta.order == 0 or value == nil then
+      return nil
+    end
+    local s = tostring(value):lower()
+    for i, o in ipairs(ameta.order) do
+      if tostring(o):lower() == s then
+        return i
+      end
+    end
+    return nil
+  end
+
   local out = {}
   local previous_numeric = nil
   for order, scene in ipairs(M.scenes(prj)) do
-    local value = scene.meta and (scene.meta.day or scene.meta.time)
-    local numeric = tonumber(value)
-    scene.timeline_order = order
-    scene.timeline_value = value
-    scene.timeline_numeric = numeric
-    scene.timeline_regression = numeric and previous_numeric and numeric < previous_numeric or false
-    if numeric then
-      previous_numeric = numeric
+    local m = scene.meta or {}
+    local declared = m.timeline and tostring(m.timeline) or nil
+    local on_primary = (declared == nil and axis == "main")
+      or (declared ~= nil and declared:lower() == axis:lower())
+    if on_primary then
+      local value = m.day or m.time
+      local numeric = tonumber(value)
+      scene.timeline_order = order
+      scene.timeline_value = value
+      scene.timeline_numeric = numeric
+      scene.timeline_rank = rank_of(value)
+      scene.timeline_secondary = false
+      scene.timeline_regression =
+        numeric and previous_numeric and numeric < previous_numeric or false
+      if numeric then
+        previous_numeric = numeric
+      end
+      out[#out + 1] = scene
     end
-    out[#out + 1] = scene
+    for _, entry in ipairs(type(m.also) == "table" and m.also or { m.also }) do
+      local text = entry and tostring(entry) or ""
+      local ax = text:match("timeline:%s*([^,}]+)")
+      local coord = text:match("at:%s*([^,}]+)") or text:match("day:%s*([^,}]+)")
+        or text:match("time:%s*([^,}]+)")
+      if ax and coord then
+        ax = vim.trim(ax)
+        if ax:lower() == axis:lower() then
+          -- A shallow copy so per-row timeline fields don't leak between axes.
+          local coord = vim.trim(coord)
+          local row = setmetatable({
+            timeline_order = order,
+            timeline_value = coord,
+            timeline_numeric = tonumber(coord),
+            timeline_rank = rank_of(coord),
+            timeline_secondary = true,
+            timeline_regression = false,
+            _label = nil,
+          }, { __index = scene })
+          out[#out + 1] = row
+        end
+      end
+    end
   end
   table.sort(out, function(a, b)
-    if a.timeline_numeric and b.timeline_numeric and a.timeline_numeric ~= b.timeline_numeric then
-      return a.timeline_numeric < b.timeline_numeric
+    local ka = a.timeline_rank or a.timeline_numeric
+    local kb = b.timeline_rank or b.timeline_numeric
+    if ka and kb and ka ~= kb then
+      return ka < kb
     end
-    if a.timeline_numeric and not b.timeline_numeric then
+    if ka and not kb then
       return true
     end
-    if b.timeline_numeric and not a.timeline_numeric then
+    if kb and not ka then
       return false
     end
     return a.timeline_order < b.timeline_order
   end)
+  return out
+end
+
+--- Timeline card metadata: `references/timelines/<name>.md` frontmatter
+--- carries `order:` (ordinal sequence) and `unit:` (display label).
+local function load_axis_meta(prj, name)
+  local dir = prj.root .. "/references/timelines"
+  for _, p in ipairs(list_md(dir)) do
+    local stem = vim.fn.fnamemodify(p, ":t:r")
+    if stem:lower() == name:lower() then
+      local doc = meta.chapter(p)
+      local d = doc and doc.meta or {}
+      return {
+        name = name,
+        order = type(d.order) == "table" and d.order or {},
+        unit = d.unit and tostring(d.unit) or nil,
+      }
+    end
+  end
+  return { name = name, order = {}, unit = nil }
+end
+
+-- Declared axes for the project: implicit main first, then every timeline
+-- card (sorted). Each entry: { name, order = {...}, unit }.
+M.timeline_axes = function(prj)
+  prj = prj or project.current()
+  local out = { { name = "main", order = {}, unit = nil } }
+  local seen = { main = true }
+  local extra = {}
+  local dir = prj and prj.root and (prj.root .. "/references/timelines") or nil
+  for _, p in ipairs(dir and list_md(dir) or {}) do
+    local stem = vim.fn.fnamemodify(p, ":t:r")
+    if not seen[stem:lower()] then
+      seen[stem:lower()] = true
+      extra[#extra + 1] = stem
+    end
+  end
+  table.sort(extra)
+  for _, name in ipairs(extra) do
+    out[#out + 1] = load_axis_meta(prj, name)
+  end
   return out
 end
 
@@ -399,6 +547,102 @@ M.plot_threads = function(prj)
   return out
 end
 
+-- Plotline lanes (schema v1.2): one lane per `references/plotlines/*.md`
+-- track card, its declared `stages:` sequence, the scenes attached to it in
+-- manuscript order with per-lane stage regressions flagged, and declared
+-- stages no attached scene has reached. Mirrors the LSP `storyteller.plotlines`
+-- shape. Scenes attach via a case-insensitive name match on `plotlines:`.
+M.plotlines = function(prj)
+  prj = prj or project.current()
+  local lanes = {}
+  local known = {}
+  local dir = prj and prj.root and (prj.root .. "/references/plotlines") or nil
+  for _, p in ipairs(dir and list_md(dir) or {}) do
+    local doc = meta.chapter(p)
+    local d = doc and doc.meta or {}
+    local stages = type(d.stages) == "table" and d.stages or {}
+    local ref = parse_reference(p)
+    local lane = {
+      name = ref.name,
+      file = p,
+      arc_of = d.arc_of and tostring(d.arc_of) or nil,
+      stages = vim.tbl_map(tostring, stages),
+      scenes = {},
+      uncovered = {},
+    }
+    -- Every alias attaches: a card titled "The Telemachy" still matches
+    -- scenes that reference plain "Telemachy".
+    lane.aliases = { lane.name:lower() }
+    for _, alias in ipairs(ref.names or {}) do
+      local k = tostring(alias):lower()
+      if not vim.list_contains(lane.aliases, k) then
+        lane.aliases[#lane.aliases + 1] = k
+      end
+    end
+    for _, alias in ipairs(lane.aliases) do
+      known[alias] = true
+    end
+    lanes[#lanes + 1] = lane
+  end
+  table.sort(lanes, function(a, b)
+    return a.name:lower() < b.name:lower()
+  end)
+
+  local stage_rank = function(lane, stage)
+    if not stage then
+      return nil
+    end
+    for i, s in ipairs(lane.stages) do
+      if s:lower() == tostring(stage):lower() then
+        return i
+      end
+    end
+    return nil
+  end
+
+  -- Attach scenes in manuscript order; flag within-lane stage drops.
+  for _, scene in ipairs(M.scenes(prj)) do
+    local m = scene.meta or {}
+    local names = type(m.plotlines) == "table" and m.plotlines or { m.plotlines }
+    for _, raw in ipairs(names) do
+      if raw and tostring(raw) ~= "" then
+        local key = tostring(raw):lower()
+        if not known[key] then
+          scene.orphan_plotline = scene.orphan_plotline or tostring(raw)
+        end
+        for _, lane in ipairs(lanes) do
+          if vim.list_contains(lane.aliases, key) then
+            local rank = stage_rank(lane, m.stage)
+            local previous = lane.scenes[#lane.scenes]
+            local regression = previous ~= nil
+              and previous.rank ~= nil
+              and rank ~= nil
+              and rank < previous.rank
+            lane.scenes[#lane.scenes + 1] =
+              { scene = scene, stage = m.stage and tostring(m.stage) or nil, rank = rank, regression = regression }
+          end
+        end
+      end
+    end
+  end
+
+  -- Declared stages no attached scene has reached.
+  for _, lane in ipairs(lanes) do
+    local reached = {}
+    for _, entry in ipairs(lane.scenes) do
+      if entry.rank then
+        reached[entry.rank] = true
+      end
+    end
+    for i, stage in ipairs(lane.stages) do
+      if not reached[i] then
+        lane.uncovered[#lane.uncovered + 1] = stage
+      end
+    end
+  end
+  return lanes
+end
+
 -- A calm review list for scenes that deserve a second look.
 M.story_health = function(prj)
   local findings = {}
@@ -421,6 +665,35 @@ M.story_health = function(prj)
     if thread.state ~= "complete" then
       findings[#findings + 1] =
         { kind = "thread", label = thread.key .. " · " .. thread.state, thread = thread }
+    end
+  end
+  -- Schema v1.2 plotline gates (docs/rework-plan.md H2).
+  local lanes = M.plotlines(prj)
+  for _, lane in ipairs(lanes) do
+    for _, entry in ipairs(lane.scenes) do
+      if entry.regression then
+        findings[#findings + 1] = {
+          kind = "stage_regression",
+          label = ("%s · stage back to %s"):format(lane.name, tostring(entry.stage)),
+          scene = entry.scene,
+        }
+      end
+    end
+    for _, stage in ipairs(lane.uncovered) do
+      findings[#findings + 1] = {
+        kind = "uncovered_stage",
+        label = ("%s · no scene at %s"):format(lane.name, stage),
+        lane = lane,
+      }
+    end
+  end
+  for _, scene in ipairs(M.scenes(prj)) do
+    if scene.orphan_plotline then
+      findings[#findings + 1] = {
+        kind = "orphan_plotline",
+        label = ("no track card for %q"):format(scene.orphan_plotline),
+        scene = scene,
+      }
     end
   end
   return findings

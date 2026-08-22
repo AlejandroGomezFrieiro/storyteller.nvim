@@ -121,6 +121,25 @@ local function matches(sc, tokens)
       if not (list_has(m.setup, value) or list_has(m.payoff, value)) then
         return false
       end
+    elseif key == "plotline" then
+      if not list_has(m.plotlines, value) then
+        return false
+      end
+    elseif key == "stage" then
+      if not (m.stage and tostring(m.stage):lower():find(value, 1, true)) then
+        return false
+      end
+    elseif key == "timeline" then
+      local on_axis = m.timeline and tostring(m.timeline):lower():find(value, 1, true)
+      for _, entry in ipairs(type(m.also) == "table" and m.also or { m.also }) do
+        local ax = entry and tostring(entry):match("timeline:%s*([^,}]+)")
+        if ax and ax:lower():find(value, 1, true) then
+          on_axis = true
+        end
+      end
+      if not on_axis then
+        return false
+      end
     elseif key == "chapter" then
       if not ch_title:lower():find(value, 1, true) then
         return false

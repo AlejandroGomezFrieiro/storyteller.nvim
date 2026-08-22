@@ -220,6 +220,17 @@ M.type_body = function(dir)
   return { "Notes" }
 end
 
+-- Card body form templates emit: "bullets" (default) or "headings"
+-- (`### Key` sections). Reading is style-agnostic either way.
+M.type_style = function(dir)
+  for _, t in pairs(M.reference_types) do
+    if t.dir == dir and t.style == "headings" then
+      return "headings"
+    end
+  end
+  return "bullets"
+end
+
 M.type_dirs = function(prj_dirs)
   local out = {}
   local seen = {}

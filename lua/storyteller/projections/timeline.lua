@@ -10,17 +10,26 @@ local M = {}
 
 local COLS = { "day", "title", "pov", "words" }
 
-function M.render(prj)
-  local entries = index.timeline(prj)
+-- Render one axis (default main). Secondary (`also:` placement) rows carry a
+-- `*` day-cell suffix: they are visible but not writable here — the scene's
+-- YAML holds the placement.
+function M.render(prj, axis)
+  local entries = index.timeline(prj, axis)
   corkboard.disambiguate(entries)
   local rows = {}
   local widths = { day = 3, title = 5, pov = 3, words = 5 }
   for _, sc in ipairs(entries) do
     local m = sc.meta or {}
-    local day = m.day ~= nil and tostring(m.day) or (m.time and tostring(m.time) or "·")
-    if m.day == nil and tonumber(m.time) then
-      day = tostring(tonumber(m.time))
+    local value
+    if sc.timeline_secondary then
+      value = tostring(sc.timeline_value or "·")
+    else
+      value = m.day ~= nil and tostring(m.day) or (m.time and tostring(m.time) or "·")
+      if m.day == nil and tonumber(m.time) then
+        value = tostring(tonumber(m.time))
+      end
     end
+    local day = value .. (sc.timeline_secondary and "*" or "")
     local row = {
       day = day,
       title = sc._label or sc.title or "Untitled",
@@ -33,6 +42,14 @@ function M.render(prj)
     rows[#rows + 1] = { scene = sc, cells = row }
   end
 
+  local meta_axis = index.timeline_axes(prj)
+  local unit = ""
+  for _, a in ipairs(meta_axis) do
+    if a.name:lower() == (axis or "main"):lower() and a.unit then
+      unit = " · " .. a.unit
+    end
+  end
+
   local function line(cells, pad_char)
     local out = {}
     for _, c in ipairs(COLS) do
@@ -42,7 +59,7 @@ function M.render(prj)
   end
 
   local lines = {
-    "# Timeline · story time",
+    "# Timeline · " .. (axis or "main") .. unit,
     "",
     line({ day = "day", title = "title", pov = "pov", words = "words" }),
     table.concat({
@@ -60,6 +77,7 @@ function M.render(prj)
       title = row.cells.title,
       raw_title = row.scene.title,
       day_cell = row.cells.day,
+      secondary = row.scene.timeline_secondary or false,
       fields = { day = row.cells.day, title = row.cells.title },
       lnum = #lines,
       scene = row.scene,
@@ -69,6 +87,8 @@ function M.render(prj)
 end
 
 -- Parse rows back out of edited text. Identity is the (disambiguated) title.
+-- A trailing `*` in the day cell marks a secondary (`also:`) placement row;
+-- the marker is stripped and remembered.
 function M.parse(lines)
   local records = {}
   local header_seen = false
@@ -81,11 +101,14 @@ function M.parse(lines)
         cells[#cells + 1] = vim.trim(cell)
       end
       if #cells >= 4 then
+        local secondary = cells[1]:sub(-1) == "*"
+        local day = secondary and vim.trim(cells[1]:sub(1, -2)) or cells[1]
         records[#records + 1] = {
           title = cells[2],
           raw_title = corkboard.raw_title(cells[2]),
-          day_cell = cells[1],
-          fields = { day = cells[1], title = cells[2] },
+          day_cell = day,
+          secondary = secondary,
+          fields = { day = day, title = cells[2] },
         }
       end
     end
@@ -93,8 +116,9 @@ function M.parse(lines)
   return records
 end
 
--- Only the day cell is writable; anything else is ignored except identity
--- edits, which cannot be expressed here.
+-- Only primary day cells are writable; secondary (`also:`) placements are
+-- read-only here — edit the scene YAML instead. Values may be numbers or,
+-- on ordinal axes, any non-empty coordinate string.
 function M.diff(old_recs, new_recs)
   local function key(r)
     return r.title
@@ -121,12 +145,18 @@ function M.diff(old_recs, new_recs)
     local orr = old_by_key[key(nr)]
     local old_day = orr.day_cell
     local new_day = nr.day_cell
+    if old_day ~= new_day and orr.secondary then
+      return nil,
+        ("%s is an also: placement — edit it in the scene YAML, not this sheet"):format(
+          nr.title
+        )
+    end
     if old_day ~= new_day then
       local value = nil
       if new_day ~= "·" and new_day ~= "" then
         value = tonumber(new_day)
         if not value then
-          return nil, ("day must be a number or · (got %q for %s)"):format(new_day, nr.title)
+          value = new_day
         end
       end
       ops[#ops + 1] = {

@@ -42,11 +42,14 @@ local function resolve_type(arg, prj)
   return arg
 end
 
--- Card content, by type folder. Mirrors the shared schema.json templates.
+-- Card content, by type folder. Mirrors the shared schema.json templates;
+-- a type with `"style": "headings"` gets `### Key` sections instead of
+-- `- **Key:**` bullets (reading is style-agnostic either way).
 function M.card_lines(ftype, name)
   local body = {}
+  local labels = {}
   for _, label in ipairs(schema.type_body(ftype)) do
-    body[#body + 1] = "- **" .. label .. ":** "
+    labels[#labels + 1] = label
   end
   local lines = {
     "---",
@@ -57,7 +60,24 @@ function M.card_lines(ftype, name)
     "## " .. name,
     "",
   }
-  vim.list_extend(lines, body)
+  if schema.type_style(ftype) == "headings" then
+    for i, label in ipairs(labels) do
+      if i > 1 then
+        lines[#lines + 1] = ""
+      end
+      lines[#lines + 1] = "### " .. label
+      lines[#lines + 1] = ""
+    end
+    while lines[#lines] == "" do
+      table.remove(lines)
+    end
+    lines[#lines + 1] = ""
+  else
+    for _, label in ipairs(labels) do
+      body[#body + 1] = "- **" .. label .. ":** "
+    end
+    vim.list_extend(lines, body)
+  end
   return lines
 end
 
