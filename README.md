@@ -244,14 +244,17 @@ implementations to the same behavior.
 ## The TUI
 
 `storyteller-tui` (in [`tui/`](tui/)) is a keyboard-first ratatui companion:
-a dashboard with per-chapter progress bars, read-only corkboard and timeline
-mirrors, and `o` to open the focused scene in `$EDITOR` at its heading.
-Mouse scroll/click are optional aliases; structural editing happens in the
-editor's storyboards. Build it with the flake (`.#storyteller-tui`) or
-`cargo build` inside `tui/`. Theming: five presets (`dark`, `light`,
-`midnight`, `forest`, `contrast`) with automatic truecolor → 16-color
-degradation — see [`tui/README.md`](tui/README.md). `:Story tui` follows your
-editor's background; override with the `tui_theme`/`tui_glyphs` options.
+five tabs — Dashboard with per-chapter progress bars, Corkboard, Timeline
+(axis-aware, with retiming), Plotlines lanes/threads, and a Relations graph —
+plus staged edits: mark changes anywhere (`a` attach, `i` stage, `x` remove,
+`s` swap, `h/l` retime), review the pending count in the footer, and apply
+them all atomically with `S` (`u` drops). `<CR>` opens the focused item in
+`$EDITOR`. Mouse scroll/click are optional aliases. Build it with the flake
+(`.#storyteller-tui`) or `cargo build` inside `tui/`. Theming: five presets
+(`dark`, `light`, `midnight`, `forest`, `contrast`) with automatic truecolor →
+16-color degradation and three glyph tiers (`--glyphs safe|ascii|nerd`) — see
+[`tui/README.md`](tui/README.md). `:Story tui` follows your editor's
+background; override with the `tui_theme`/`tui_glyphs` options.
 
 ## Configuration
 

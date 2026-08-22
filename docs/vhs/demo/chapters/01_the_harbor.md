@@ -19,6 +19,9 @@ pov: Odysseus
 location: Ithaca
 day: 1
 setup: storm-warning
+stage: warning
+plotlines:
+  - The Long Way Home
 beat: A warning arrives too late.
 ```
 
@@ -33,6 +36,12 @@ pov: Odysseus
 location: Ithaca
 day: 2
 payoff: storm-warning
+stage: choice
+plotlines:
+  - The Long Way Home
+timeline: Past
+also:
+  - { timeline: Past, at: dusk }
 beat: Leave before the tide turns.
 ```
 

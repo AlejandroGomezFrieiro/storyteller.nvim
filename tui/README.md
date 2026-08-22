@@ -24,7 +24,7 @@ colorscheme's background automatically.
 | --- | --- | --- |
 | `--theme <id>` | `dark` `light` `midnight` `forest` `contrast` | Palette preset (§4.2 of the visual plan). Wins over everything. |
 | `--background <bg>` | `dark` `light` | Picks `dark` or `light`; overridden by `--theme`. |
-| `--glyphs <tier>` | `safe` `nerd` | Icon tier. `nerd` currently falls back to `safe` until Nerd tables ship (§9). |
+| `--glyphs <tier>` | `safe` `ascii` `nerd` | Icon tier: safe symbols by default, ASCII under monochrome, Nerd Font tables behind `nerd`. |
 | `[path]` | directory | Project root; defaults to `$PWD`. |
 
 ## Presets

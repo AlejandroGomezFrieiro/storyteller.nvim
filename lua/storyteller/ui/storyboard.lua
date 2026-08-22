@@ -291,7 +291,7 @@ local function refresh(buf, force)
       return
     end
   end
-  local out, rerr = projections.render(b.name, b.prj)
+  local out, rerr = projections.render(b.name, b.prj, b.axis)
   if not out then
     vim.notify("[storyteller] Render failed: " .. tostring(rerr), vim.log.levels.ERROR)
     return
@@ -304,7 +304,7 @@ end
 
 -- --- Open --------------------------------------------------------------------
 
-function M.open(name, prj)
+function M.open(name, prj, axis)
   prj = prj or project.current()
   if not prj then
     vim.notify("[storyteller] Not in a storytelling project.", vim.log.levels.WARN)
@@ -312,21 +312,23 @@ function M.open(name, prj)
   end
   schema.load(prj.root)
 
-  local out, err = projections.render(name, prj)
+  local out, err = projections.render(name, prj, axis)
   if not out then
     vim.notify("[storyteller] " .. tostring(err), vim.log.levels.ERROR)
     return nil
   end
 
   local buf = vim.api.nvim_create_buf(false, true)
-  local board_name = "storyteller://" .. name .. "/" .. vim.fn.fnamemodify(prj.root, ":t")
+  local board_name = "storyteller://" .. name
+    .. (axis and ("/" .. axis) or "")
+    .. "/" .. vim.fn.fnamemodify(prj.root, ":t")
   pcall(vim.api.nvim_buf_set_name, buf, board_name)
   vim.bo[buf].buftype = "acwrite"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "storyteller-board"
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, out.lines)
-  state[buf] = { name = name, prj = prj, baseline = out.lines }
+  state[buf] = { name = name, prj = prj, axis = axis, baseline = out.lines }
   board_hl.paint(buf, name)
 
   vim.api.nvim_create_autocmd("BufWriteCmd", {

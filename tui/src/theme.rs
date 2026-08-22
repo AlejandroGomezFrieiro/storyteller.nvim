@@ -148,8 +148,10 @@ const CONTRAST: [(Slot, Color); SLOT_COUNT] = [
 
 // --- Glyphs ------------------------------------------------------------------
 
-/// Two tiers per docs/tui-visual-plan.md §9: safe box-drawing/symbols by
-/// default, plain ASCII under monochrome detection or `--glyphs ascii`.
+/// Three tiers per docs/tui-visual-plan.md §9: safe box-drawing/symbols by
+/// default, plain ASCII under monochrome detection or `--glyphs ascii`, and
+/// a Nerd Font table behind `--glyphs nerd`. The contrast preset degrades to
+/// the safe tier.
 #[derive(Clone, Copy)]
 pub struct Glyphs {
     pub brand: &'static str,
@@ -161,6 +163,9 @@ pub struct Glyphs {
     pub done: &'static str,
     pub revision: &'static str,
     pub unused: &'static str,
+    /// One icon per tab (Dashboard, Corkboard, Timeline, Plotlines,
+    /// Relations); empty in the safe/ascii tiers so layouts don't shift.
+    pub tabs: [&'static str; 5],
 }
 
 pub const SAFE_GLYPHS: Glyphs = Glyphs {
@@ -173,6 +178,7 @@ pub const SAFE_GLYPHS: Glyphs = Glyphs {
     done: "✔",
     revision: "↻",
     unused: "×",
+    tabs: ["", "", "", "", ""],
 };
 
 pub const ASCII_GLYPHS: Glyphs = Glyphs {
@@ -185,6 +191,26 @@ pub const ASCII_GLYPHS: Glyphs = Glyphs {
     done: "x",
     revision: "~",
     unused: "x",
+    tabs: ["", "", "", "", ""],
+};
+
+pub const NERD_GLYPHS: Glyphs = Glyphs {
+    brand: "\u{f02d}",
+    selection: "\u{f0da}",
+    fill: "\u{2587}",
+    track: "\u{2591}",
+    draft: "\u{f111}",
+    outline: "\u{f10c}",
+    done: "\u{f00c}",
+    revision: "\u{f021}",
+    unused: "\u{f00d}",
+    tabs: [
+        "\u{f0e4}", // gauge — dashboard
+        "\u{f009}", // th-large — corkboard cards
+        "\u{f017}", // clock — timeline
+        "\u{f080}", // bar chart — plotlines
+        "\u{f1e0}", // share-alt — relations
+    ],
 };
 
 pub fn status_glyph(glyphs: &Glyphs, status: &str) -> &'static str {
@@ -256,7 +282,8 @@ impl Theme {
             }
         }
 
-        let ascii = mono || preset_id == "contrast";
+        // Monochrome keeps ASCII; contrast degrades to the safe tier (§9).
+        let ascii = mono;
         Theme {
             colors,
             mono,
@@ -264,6 +291,15 @@ impl Theme {
             glyphs: if ascii { ASCII_GLYPHS } else { SAFE_GLYPHS },
             preset_id,
         }
+    }
+
+    /// Apply a `--glyphs` tier override: `ascii`, `safe` (default) or `nerd`.
+    pub fn apply_glyphs(&mut self, tier: &str) {
+        self.glyphs = match tier {
+            "ascii" => ASCII_GLYPHS,
+            "nerd" => NERD_GLYPHS,
+            _ => SAFE_GLYPHS,
+        };
     }
 
     /// Resolve a theme from explicit flags and the environment.

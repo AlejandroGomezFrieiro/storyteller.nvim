@@ -18,6 +18,9 @@ status: outline
 pov: Odysseus
 location: Open Sea
 day: 3
+stage: black water
+plotlines:
+  - The Long Way Home
 beat: The storm reveals its cost.
 ```
 

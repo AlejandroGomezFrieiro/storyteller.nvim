@@ -65,8 +65,10 @@ register("corkboard", "Scene cards (editable storyboard)", function(prj)
   require("storyteller.ui.storyboard").open("corkboard", prj)
 end)
 
-register("timeline", "Story chronology (editable storyboard)", function(prj)
-  require("storyteller.ui.storyboard").open("timeline", prj)
+register("timeline", "Story chronology (editable storyboard)", function(prj, args)
+  -- Optional axis: :Story timeline Past renders that axis's placements.
+  local axis = type(args) == "table" and tostring(args[2] or "") or ""
+  require("storyteller.ui.storyboard").open("timeline", prj, axis ~= "" and axis or nil)
 end)
 
 register("synopsis", "Synopsis outliner (editable storyboard)", function(prj)

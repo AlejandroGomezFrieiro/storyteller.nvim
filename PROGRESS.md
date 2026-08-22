@@ -11,6 +11,39 @@ Log of implementation work against the plan in `PLAN.md`.
 
 ---
 
+## Schema 1.2/1.3 rework (0.4.0)
+
+Both frontends migrated onto schema v1.3 (`docs/rework-plan.md`, all phases
+landed; no deferrals):
+
+- **Standard first** (`storyteller` repo, tag `v1.3.0`): axes with
+  placements/sync anchors, plotline tracks + stages, events, bilocation
+  via `also:`, unused-scene exclusion, card fields as headings.
+- **A — parity:** Lua compile drops `status: unused` scenes; chapter
+  status surfaced.
+- **B — contracts:** frozen grammar in `docs/interaction.md`, projection
+  deltas in `docs/projections.md`; golden fixtures in
+  `tests/projections/*.json` assert byte-exact Lua/TUI parity; surgical
+  `scene_write` preserves comments.
+- **C/D — staged edits (TUI):** one `store.rs` op engine (atomic apply,
+  git snapshot, stale guard) wired into a footer staging segment
+  (`S` apply / `u` drop).
+- **E/F/G — TUI views:** axis model from storyteller-core (t/o/w/h/l/S/u),
+  Relations canvas (graph + inspector, edge editing), Plotlines lanes →
+  threads degradation with stage regressions and read-only grid.
+- **H — Neovim side:** per-axis timeline sheets (`:Story timeline <axis>`,
+  secondary rows read-only), plotline lanes + health gates
+  (`stage_regression`, `orphan_plotline`, `uncovered_stage`),
+  `plotline:`/`stage:`/`timeline:` collection keys, template-planted
+  plotline cards, heading-form card fields + style-aware creation.
+- **I — chrome/release:** nerd glyph tier behind `--glyphs nerd`
+  (tab icons), contrast degrades to safe tier, tapes 08/19 refreshed +
+  20-relations/21-plotlines added, version 0.4.0.
+
+Suites at close: Lua spec 229 checks, Rust 25 tests, clippy clean.
+
+---
+
 ## Rework (0.3.0)
 - [x] **TUI visuals lane** (`docs/tui-visual-plan.md` §16 1–4): `theme.rs`
       with semantic slots, five presets, termprofile capability detection and

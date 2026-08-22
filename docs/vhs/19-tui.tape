@@ -19,17 +19,35 @@ Show
 Type "storyteller-tui docs/vhs/demo"
 Enter
 Sleep 3s
-# Same grammar as the editor: Tab cycles views, j/k moves.
+# Five tabs, one grammar: Tab cycles Dashboard → Corkboard → Timeline →
+# Plotlines → Relations; j/k moves within a view.
+Type "Tab"
+Sleep 1500ms
 Type "Tab"
 Sleep 2000ms
-Type "j"
-Sleep 400ms
-Type "j"
+# Timeline: t cycles axes, o flips reading/story order, h/l retimes.
+Type "t"
 Sleep 800ms
+Type "o"
+Sleep 1500ms
+# Plotlines: lanes with stage pills; v switches modes, p the read-only grid.
 Type "Tab"
 Sleep 2000ms
-Type "k"
-Sleep 800ms
+Type "p"
+Sleep 1200ms
+Type "v"
+Sleep 1500ms
+# Relations: the character graph with its inspector pane.
+Type "Tab"
+Sleep 2500ms
+# Staging moment: on Corkboard, `a` advances a card's status into the staged
+# set (footer shows the pending segment); S applies everything at once.
+Type "2"
+Sleep 1000ms
+Type "a"
+Sleep 1000ms
+Type "S"
+Sleep 1800ms
 Hide
 Type "q"
 Sleep 500ms

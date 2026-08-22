@@ -27,6 +27,7 @@ use ui::Tab;
 struct Args {
     theme: Option<String>,
     background: Option<String>,
+    glyphs: Option<String>,
     path: PathBuf,
 }
 
@@ -34,6 +35,7 @@ fn parse_args() -> Result<Args> {
     let mut args = std::env::args().skip(1);
     let mut theme = None;
     let mut background = None;
+    let mut glyphs = None;
     let mut path = None;
     while let Some(arg) = args.next() {
         let mut value_for = |name: &str| -> Result<String> {
@@ -44,13 +46,13 @@ fn parse_args() -> Result<Args> {
             "--theme" => theme = Some(value_for("theme")?),
             "--background" => background = Some(value_for("background")?),
             "--glyphs" => {
-                // Nerd tier ships later (§9); safe is the only table for now.
-                let _ = value_for("glyphs")?;
+                // Tier table: safe (default) | ascii | nerd (§9).
+                glyphs = Some(value_for("glyphs")?);
             }
             "--help" | "-h" => {
                 println!(
                     "storyteller-tui [--theme dark|light|midnight|forest|contrast] \
-                     [--background dark|light] [path]"
+                     [--background dark|light] [--glyphs safe|ascii|nerd] [path]"
                 );
                 std::process::exit(0);
             }
@@ -64,6 +66,7 @@ fn parse_args() -> Result<Args> {
     Ok(Args {
         theme,
         background,
+        glyphs,
         path: path.unwrap_or_else(|| {
             std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
         }),
@@ -79,10 +82,11 @@ fn main() -> Result<()> {
             std::process::exit(2);
         }
     };
-    let theme = std::sync::Arc::new(theme::Theme::load(
-        args.theme.as_deref(),
-        args.background.as_deref(),
-    ));
+    let mut theme = theme::Theme::load(args.theme.as_deref(), args.background.as_deref());
+    if let Some(tier) = &args.glyphs {
+        theme.apply_glyphs(tier);
+    }
+    let theme = std::sync::Arc::new(theme);
     let mut prj = project::load(&args.path)?;
     let mut store = store::Store::new(&args.path)?;
     let mut axes = load_axes(&args.path);

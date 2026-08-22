@@ -30,9 +30,11 @@ Type "3j"
 Sleep 500ms
 Type "J"
 Sleep 2500ms
-# Re-render from disk to discard the staged edit.
-Type "R"
-Sleep 1500ms
+# Axes are first-class: :Story timeline Past renders that axis's sheet, with
+# also: placements marked read-only (*).
+Type ":Story timeline Past"
+Enter
+Sleep 3000ms
 Hide
 Type ":qa!"
 Enter

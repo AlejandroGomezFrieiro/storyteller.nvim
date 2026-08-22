@@ -158,7 +158,24 @@ adjust it — without leaving the keyboard, and with the full editor (macros,
 the storm` remain in manuscript order rather than being guessed. Edit the day
 cell (or press `J`/`K` to shift ±1 day) and `:w` retimes the scene.
 
+Axes are first-class: a card under `references/timelines/` (with an optional
+`order:` sequence and `unit:` label) declares another axis. Open it with
+`:Story timeline <axis>` — scenes that declare `timeline: <axis>` ride it, and
+`also:` placements appear as read-only rows marked with `*` (edit those in the
+scene YAML).
+
 ![Story timeline](assets/08-timeline.gif)
+
+### Plotlines
+
+A track card under `references/plotlines/` declares a lane: its `stages:`
+sequence orders the story's progress, and scenes attach by listing the name
+under `plotlines:` in their YAML. The TUI's Plotlines tab shows each lane in
+manuscript order with stage pills, marks stage regressions, lists stages no
+scene has reached, and degrades to setup/payoff threads when no track cards
+exist (`v` switches modes, `p` overlays a read-only stage grid).
+
+![Plotlines](assets/21-plotlines-tui.gif)
 
 ### Plot Threads
 

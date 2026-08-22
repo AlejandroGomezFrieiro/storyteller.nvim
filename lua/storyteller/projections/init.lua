@@ -35,12 +35,17 @@ function M.names()
   return out
 end
 
-function M.render(name, prj)
+function M.render(name, prj, opts)
   local mod = mods[name]
   if not mod then
     return nil, "unknown projection: " .. tostring(name)
   end
-  local ok, out = pcall(mod.render, prj)
+  local ok, out
+  if name == "timeline" and opts and opts ~= "" then
+    ok, out = pcall(mod.render, prj, tostring(opts))
+  else
+    ok, out = pcall(mod.render, prj)
+  end
   if not ok then
     return nil, tostring(out)
   end

@@ -1,9 +1,11 @@
 # Joint Rework Plan — storyteller.nvim + storyteller-tui on schema v1.3
 
-> Status: **active master plan**. Supersedes the deferred lane sketched in
-> `docs/tui-visual-plan.md` §5–§14 header and the tiered `MIGRATION.md`
-> (now a pointer). Nothing is parked: every previously deferred item has a
-> phase below. We are building toward a final version meant to keep.
+> Status: **complete (0.4.0)**. All phases A–I landed; nothing deferred.
+> See `PROGRESS.md` "Schema 1.2/1.3 rework" for the closing summary and
+> `docs/interaction.md` / `docs/projections.md` for the contracts as built.
+> Supersedes the deferred lane sketched in `docs/tui-visual-plan.md` §5–§14
+> header and the tiered `MIGRATION.md` (now a pointer). Nothing is parked:
+> every previously deferred item has a phase below. We are building toward a final version meant to keep.
 
 The standard (storyteller schema v1.2.0/v1.3.0) generalized timelines into
 axes (`unit`/`order`/`origin`/`parent`, `at:` coordinates), added secondary

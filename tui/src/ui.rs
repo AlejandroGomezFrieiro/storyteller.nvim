@@ -190,10 +190,17 @@ pub fn render(
         Layout::vertical([Constraint::Length(1), Constraint::Min(0), Constraint::Length(1)])
             .areas(inner);
 
-    let tabs = Tabs::new(TAB_TITLES.iter().map(|(n, t)| format!("{n} {t}")))
-        .select(tab.index())
-        .highlight_style(theme.accent())
-        .style(theme.dim());
+    let tabs = Tabs::new(TAB_TITLES.iter().enumerate().map(|(i, (n, t))| {
+        let icon = theme.glyphs.tabs.get(i).copied().unwrap_or("");
+        if icon.is_empty() {
+            format!("{n} {t}")
+        } else {
+            format!("{icon} {n} {t}")
+        }
+    }))
+    .select(tab.index())
+    .highlight_style(theme.accent())
+    .style(theme.dim());
     f.render_widget(tabs, tabs_row);
 
     match tab {
@@ -1174,7 +1181,7 @@ fn relations(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::{ASCII_GLYPHS, SAFE_GLYPHS};
+    use crate::theme::{ASCII_GLYPHS, NERD_GLYPHS, SAFE_GLYPHS};
     use std::path::PathBuf;
     use ratatui::{backend::TestBackend, Terminal};
     use termprofile::TermProfile;
@@ -1357,9 +1364,24 @@ mod tests {
     #[test]
     fn contrast_preset_degrades_glyphs_and_colors() {
         let theme = Theme::from_profile(TermProfile::Ansi16, "contrast");
-        assert_eq!(theme.glyphs.brand, ASCII_GLYPHS.brand);
+        // Contrast degrades to the SAFE tier (§9), not all the way to ASCII.
+        assert_eq!(theme.glyphs.brand, SAFE_GLYPHS.brand);
+        assert_eq!(theme.glyphs.tabs[0], "");
         // ANSI-named colors survive as named variants.
         assert_eq!(theme.color_of(Slot::Accent), ratatui::style::Color::Cyan);
+    }
+
+    #[test]
+    fn nerd_tier_swaps_icons_without_losing_tables() {
+        let mut theme = Theme::from_profile(TermProfile::TrueColor, "dark");
+        theme.apply_glyphs("nerd");
+        assert_eq!(theme.glyphs.brand, NERD_GLYPHS.brand);
+        assert_eq!(theme.glyphs.tabs.len(), 5);
+        assert!(!theme.glyphs.tabs[2].is_empty(), "timeline tab carries an icon");
+        theme.apply_glyphs("ascii");
+        assert_eq!(theme.glyphs.brand, ASCII_GLYPHS.brand);
+        theme.apply_glyphs("bogus");
+        assert_eq!(theme.glyphs.brand, SAFE_GLYPHS.brand, "unknown tiers fall back to safe");
     }
 
     #[test]
