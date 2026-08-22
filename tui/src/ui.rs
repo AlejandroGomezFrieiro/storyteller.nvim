@@ -8,7 +8,8 @@ use crate::theme::{status_glyph, Slot, Theme};
 use unicode_width::UnicodeWidthStr;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    text::{Line, Span},
+    style::{Modifier, Style},
+    text::{Line, Span, Text},
     widgets::{Block, BorderType, List, ListItem, ListState, Paragraph, Tabs},
     Frame,
 };
@@ -18,6 +19,7 @@ pub enum Tab {
     Dashboard,
     Corkboard,
     Timeline,
+    Plotlines,
     Relations,
 }
 
@@ -29,11 +31,12 @@ pub struct Hud<'a> {
     pub message: Option<&'a str>,
 }
 
-const TAB_TITLES: [(&str, &str); 4] = [
+const TAB_TITLES: [(&str, &str); 5] = [
     ("1", "Dashboard"),
     ("2", "Corkboard"),
     ("3", "Timeline"),
-    ("4", "Relations"),
+    ("4", "Plotlines"),
+    ("5", "Relations"),
 ];
 
 impl Tab {
@@ -41,7 +44,8 @@ impl Tab {
         match self {
             Tab::Dashboard => Tab::Corkboard,
             Tab::Corkboard => Tab::Timeline,
-            Tab::Timeline => Tab::Relations,
+            Tab::Timeline => Tab::Plotlines,
+            Tab::Plotlines => Tab::Relations,
             Tab::Relations => Tab::Dashboard,
         }
     }
@@ -51,7 +55,8 @@ impl Tab {
             Tab::Dashboard => 0,
             Tab::Corkboard => 1,
             Tab::Timeline => 2,
-            _ => 3,
+            Tab::Plotlines => 3,
+            Tab::Relations => 4,
         }
     }
 
@@ -79,6 +84,15 @@ impl Tab {
                 ("o", "order"),
                 ("w", "lanes"),
                 ("h/l", "retime"),
+                ("S/u", "staging"),
+            ],
+            Tab::Plotlines => vec![
+                ("j/k", "rows"),
+                ("v", "modes"),
+                ("p", "grid"),
+                ("a", "attach"),
+                ("i", "stage"),
+                ("x", "detach"),
                 ("S/u", "staging"),
             ],
             Tab::Relations => vec![
@@ -153,6 +167,7 @@ pub fn render(
     hud: &Hud,
     tl_ctx: Option<&TlCtx<'_>>,
     rel: Option<(&RelState, &crate::relations::RelView)>,
+    pl_ctx: Option<(&PlState, &[PlRow<'_>])>,
 ) {
     let area = f.area();
     let class = width_class(area.width);
@@ -192,6 +207,11 @@ pub fn render(
         Tab::Timeline => {
             if let Some(ctx) = tl_ctx {
                 timeline(f, prj, body, list_state, theme, class, ctx);
+            }
+        }
+        Tab::Plotlines => {
+            if let Some((state, rows)) = pl_ctx {
+                plotlines(f, body, prj, state, rows, list_state, theme);
             }
         }
     }
@@ -699,6 +719,323 @@ fn timeline(
     f.render_stateful_widget(list, area, list_state);
 }
 
+// --- Plotlines ---------------------------------------------------------------
+
+/// Plotlines tab state (docs/rework-plan.md §G).
+pub struct PlState {
+    /// Lanes when tracks exist; `Threads` forces the setup/payoff view;
+    /// `Lanes` forces lanes even with no tracks (empty-state hint shows).
+    pub mode: PlMode,
+    /// Read-only plot grid overlay (`p`).
+    pub grid: bool,
+}
+
+impl Default for PlState {
+    fn default() -> Self {
+        PlState { mode: PlMode::Auto, grid: false }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PlMode {
+    Auto,
+    Lanes,
+    Threads,
+}
+
+/// One selectable Plotlines row.
+pub enum PlRow<'a> {
+    LaneHeader(&'a crate::project::Track),
+    Stage {
+        lane: &'a crate::project::Track,
+        scene: &'a crate::project::Scene,
+        /// Attached to more than one track.
+        shared: bool,
+        regression: bool,
+        staged: bool,
+    },
+    /// A declared stage no attached scene has reached yet.
+    Ghost {
+        lane: &'a crate::project::Track,
+        stage: String,
+    },
+    ThreadHeader {
+        key: String,
+        /// ● resolved · ○ open setup · △ orphan payoff
+        state: char,
+    },
+    ThreadScene {
+        side: crate::store::Side,
+        key: String,
+        scene: &'a crate::project::Scene,
+        staged: bool,
+    },
+}
+
+fn stage_rank(stages: &[String], stage: &str) -> Option<usize> {
+    stages.iter().position(|s| s.eq_ignore_ascii_case(stage))
+}
+
+fn scene_staged(sc: &crate::project::Scene, staged: &[crate::store::Op]) -> bool {
+    let file = sc.file.to_string_lossy();
+    staged.iter().any(|op| match op {
+        crate::store::Op::SetStage { scene, .. }
+        | crate::store::Op::AttachPlotline { scene, .. }
+        | crate::store::Op::DetachPlotline { scene, .. }
+        | crate::store::Op::AttachThread { scene, .. }
+        | crate::store::Op::DetachThread { scene, .. } => {
+            scene.file == file && scene.line == sc.line
+        }
+        _ => false,
+    })
+}
+
+/// Build the selectable rows for the current mode. Lanes come from track
+/// cards in manuscript order with stage pills, shared-scene markers and
+/// unreached-stage ghosts; threads group scenes by setup/payoff key.
+pub fn plotline_rows<'a>(
+    prj: &'a Project,
+    state: &PlState,
+    staged: &[crate::store::Op],
+) -> Vec<PlRow<'a>> {
+    use crate::store::Side;
+    let mut rows: Vec<PlRow> = Vec::new();
+    if prj.tracks.is_empty() && state.mode != PlMode::Lanes || state.mode == PlMode::Threads {
+        for t in prj.threads() {
+            let state_ch = match (t.setup.is_empty(), t.payoff.is_empty()) {
+                (false, false) => '●',
+                (false, true) => '○',
+                _ => '△',
+            };
+            rows.push(PlRow::ThreadHeader { key: t.key.clone(), state: state_ch });
+            for i in t.setup {
+                rows.push(PlRow::ThreadScene {
+                    side: Side::Setup,
+                    key: t.key.clone(),
+                    scene: &prj.scenes[i],
+                    staged: scene_staged(&prj.scenes[i], staged),
+                });
+            }
+            for i in t.payoff {
+                rows.push(PlRow::ThreadScene {
+                    side: Side::Payoff,
+                    key: t.key.clone(),
+                    scene: &prj.scenes[i],
+                    staged: scene_staged(&prj.scenes[i], staged),
+                });
+            }
+        }
+        return rows;
+    }
+
+    for track in &prj.tracks {
+        rows.push(PlRow::LaneHeader(track));
+        // Attached scenes, manuscript order, with per-lane stage regression.
+        let mut prev_rank: Option<usize> = None;
+        for sc in &prj.scenes {
+            let attached = sc
+                .plotlines
+                .iter()
+                .any(|p| p.eq_ignore_ascii_case(&track.name));
+            if !attached {
+                continue;
+            }
+            let shared = prj
+                .tracks
+                .iter()
+                .filter(|t| sc.plotlines.iter().any(|p| p.eq_ignore_ascii_case(&t.name)))
+                .count()
+                > 1;
+            let rank = sc.stage.as_deref().and_then(|s| stage_rank(&track.stages, s));
+            let regression = matches!((prev_rank, rank), (Some(p), Some(r)) if r < p);
+            if rank.is_some() {
+                prev_rank = rank;
+            }
+            rows.push(PlRow::Stage { lane: track, scene: sc, shared, regression, staged: scene_staged(sc, staged) });
+        }
+        // Unreached declared stages as ghosts.
+        for stage in &track.stages {
+            let reached = prj.scenes.iter().any(|sc| {
+                sc.plotlines.iter().any(|p| p.eq_ignore_ascii_case(&track.name))
+                    && sc.stage.as_deref().map(|s| s.eq_ignore_ascii_case(stage)).unwrap_or(false)
+            });
+            if !reached {
+                rows.push(PlRow::Ghost { lane: track, stage: stage.clone() });
+            }
+        }
+    }
+    rows
+}
+
+/// The read-only plot grid: tracks × stages occupancy marks.
+pub fn plot_grid(prj: &Project) -> Vec<String> {
+    let mut out = Vec::new();
+    if prj.tracks.is_empty() {
+        return out;
+    }
+    out.push(format!(
+        "             {}",
+        prj.tracks.iter().map(|t| format!("{:>10}", fit(&t.name, 9))).collect::<String>()
+    ));
+    let all_stages: Vec<String> = prj
+        .tracks
+        .iter()
+        .flat_map(|t| t.stages.iter().cloned())
+        .collect();
+    let mut seen: Vec<String> = Vec::new();
+    for s in all_stages {
+        if !seen.iter().any(|x| x.eq_ignore_ascii_case(&s)) {
+            seen.push(s);
+        }
+    }
+    for stage in &seen {
+        let mut row = format!("{:>12} ", fit(stage, 11));
+        for t in &prj.tracks {
+            let hits: Vec<&crate::project::Scene> = prj
+                .scenes
+                .iter()
+                .filter(|sc| {
+                    sc.plotlines.iter().any(|p| p.eq_ignore_ascii_case(&t.name))
+                        && sc.stage.as_deref().map(|s| s.eq_ignore_ascii_case(stage)).unwrap_or(false)
+                })
+                .collect();
+            let mark = if hits.is_empty() {
+                "·"
+            } else if hits.len() > 1 || hits[0].plotlines.len() > 1 {
+                "◆"
+            } else {
+                "●"
+            };
+            let count = if hits.len() > 1 { format!("{mark}{}", hits.len()) } else { mark.to_string() };
+            row.push_str(&format!("{:>10} ", count));
+        }
+        out.push(row);
+    }
+    out
+}
+
+fn plotlines(
+    f: &mut Frame,
+    area: Rect,
+    prj: &Project,
+    state: &PlState,
+    rows: &[PlRow<'_>],
+    list_state: &mut ListState,
+    theme: &Theme,
+) {
+    let mut lines = vec![Line::from(Span::styled(
+        "Plotlines",
+        theme.slot_fg(Slot::Accent).add_modifier(Modifier::BOLD),
+    ))];
+    let mode_hint = match state.mode {
+        PlMode::Auto => "auto",
+        PlMode::Lanes => "lanes",
+        PlMode::Threads => "threads",
+    };
+    lines.push(Line::from(Span::styled(
+        if state.grid {
+            "grid · v modes · p back".to_string()
+        } else {
+            format!(
+                "{mode_hint} · v modes · p grid · a attach · i stage · x detach"
+            )
+        },
+        theme.dim(),
+    )));
+    lines.push(Line::default());
+
+    if state.grid {
+        for g in plot_grid(prj) {
+            lines.push(Line::from(Span::raw(g)));
+        }
+        let text = Text::from(lines);
+        f.render_widget(Paragraph::new(text), area);
+        return;
+    }
+
+    if rows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            if prj.tracks.is_empty() {
+                "No plotline tracks yet — add a card with kind: plotline."
+            } else {
+                "No rows."
+            },
+            theme.dim(),
+        )));
+        let text = Text::from(lines);
+        f.render_widget(Paragraph::new(text), area);
+        return;
+    }
+
+    let mut items: Vec<ListItem> = Vec::new();
+    for row in rows {
+        let item = match row {
+            PlRow::LaneHeader(t) => ListItem::new(Line::from(vec![
+                Span::styled("◆ ".to_string(), theme.slot_fg(Slot::Accent)),
+                Span::styled(
+                    t.name.clone(),
+                    theme.slot_fg(Slot::Accent).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    match &t.arc_of {
+                        Some(a) => format!("  arc of {a}"),
+                        None => String::new(),
+                    },
+                    theme.dim(),
+                ),
+            ])),
+            PlRow::Ghost { stage, .. } => ListItem::new(Line::from(vec![
+                Span::raw("    "),
+                Span::styled(format!("◌ unreached: {stage}"), theme.dim()),
+            ])),
+            PlRow::ThreadHeader { key, state: st } => ListItem::new(Line::from(vec![
+                Span::styled(
+                    format!("{st} "),
+                    theme.slot_fg(if *st == '△' { Slot::Warning } else { Slot::Success }),
+                ),
+                Span::styled(key.clone(), Style::default().add_modifier(Modifier::BOLD)),
+            ])),
+            PlRow::ThreadScene { side, scene, staged, .. } => ListItem::new(Line::from(vec![
+                Span::raw("    "),
+                Span::styled(
+                    match side {
+                        crate::store::Side::Setup => "setup   ",
+                        crate::store::Side::Payoff => "payoff  ",
+                    },
+                    theme.dim(),
+                ),
+                Span::raw(scene.title.clone()),
+                Span::styled(if *staged { " ▒" } else { "" }, theme.dim()),
+            ])),
+            PlRow::Stage { scene, shared, regression, staged, .. } => {
+                let stage = scene.stage.as_deref().unwrap_or("—");
+                let pill_style = if *regression {
+                    theme.slot_fg(Slot::Warning)
+                } else {
+                    theme.dim()
+                };
+                ListItem::new(Line::from(vec![
+                    Span::raw("    "),
+                    Span::styled(format!("· {stage:>10}  "), pill_style),
+                    Span::styled(if *shared { "◆ " } else { "" }, theme.dim()),
+                    Span::raw(fit(&scene.title, width_left(area.width, 22))),
+                    Span::styled(if *staged { " ▒" } else { "" }, theme.dim()),
+                ]))
+            }
+        };
+        items.push(item);
+    }
+    let list = List::new(items)
+        .block(Block::default())
+        .highlight_symbol(format!("{} ", theme.glyphs.selection))
+        .highlight_style(theme.selection_bg());
+    f.render_stateful_widget(list, area, list_state);
+}
+
+fn width_left(total: u16, used: u16) -> usize {
+    total.saturating_sub(used).max(8) as usize
+}
+
 // --- Relations ---------------------------------------------------------------
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -910,7 +1247,7 @@ mod tests {
                 if *tab != Tab::Timeline {
                     tl_ctx = None;
                 }
-                render(f, prj, tab, &mut ls, theme, &Hud::default(), tl_ctx, None)
+                render(f, prj, tab, &mut ls, theme, &Hud::default(), tl_ctx, None, None)
             })
             .unwrap();
         terminal
@@ -947,7 +1284,7 @@ mod tests {
                     Tab::Timeline => {
                         assert!(text.contains("The warning"), "timeline rows at {width}")
                     }
-                    Tab::Relations => {}
+                    Tab::Plotlines | Tab::Relations => {}
                 }
             }
         }
@@ -974,7 +1311,7 @@ mod tests {
         let mut ls = ListState::default();
         let hud = Hud { pending: 2, message: None };
         terminal
-            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None, None))
+            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None, None, None))
             .unwrap();
         let text: String = terminal
             .backend()
@@ -991,7 +1328,7 @@ mod tests {
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal
-            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None, None))
+            .draw(|f| render(f, &prj, &Tab::Timeline, &mut ls, &theme, &hud, None, None, None))
             .unwrap();
         let text: String = terminal
             .backend()
@@ -1031,5 +1368,87 @@ mod tests {
         let truecolor = frame_text(100, 24, &Tab::Corkboard, &prj, &Theme::from_profile(TermProfile::TrueColor, "dark"));
         let ansi16 = frame_text(100, 24, &Tab::Corkboard, &prj, &Theme::from_profile(TermProfile::Ansi16, "dark"));
         assert_eq!(truecolor, ansi16, "same project renders identical text under any capability");
+    }
+
+    fn lane_fixture() -> Project {
+        let mut prj = fixture();
+        prj.tracks = vec![crate::project::Track {
+            name: "The Long Way Home".into(),
+            stages: vec!["refusal".into(), "road of trials".into(), "homecoming".into()],
+            arc_of: Some("Odysseus".into()),
+        }];
+        // First scene reaches stage 2; second goes back to stage 1.
+        prj.scenes[0].plotlines = vec!["The Long Way Home".into()];
+        prj.scenes[0].stage = Some("road of trials".into());
+        prj.scenes[1].plotlines = vec!["the long way home".into()];
+        prj.scenes[1].stage = Some("refusal".into());
+        prj
+    }
+
+    #[test]
+    fn lanes_order_scenes_and_flag_regressions() {
+        let prj = lane_fixture();
+        let rows = plotline_rows(&prj, &PlState::default(), &[]);
+        match (&rows[0], &rows[1], &rows[2]) {
+            (
+                PlRow::LaneHeader(t),
+                PlRow::Stage { regression: r1, shared: s1, .. },
+                PlRow::Stage { regression: r2, .. },
+            ) => {
+                assert_eq!(t.name, "The Long Way Home");
+                assert!(r1 == &false && s1 == &false);
+                assert!(r2, "stage drop is flagged as a regression");
+            }
+            _ => panic!("expected lane header then two stage rows"),
+        }
+        // The unreached declared stage shows as a ghost row.
+        assert!(
+            rows.iter().any(|r| matches!(r, PlRow::Ghost { stage, .. } if stage == "homecoming")),
+            "unreached stages appear as ghosts"
+        );
+    }
+
+    #[test]
+    fn threads_group_setup_and_payoff() {
+        let mut prj = fixture();
+        prj.scenes[0].setup = vec!["storm".into()];
+        prj.scenes[1].payoff = vec!["Storm".into()];
+        prj.scenes[1].setup = vec!["homecoming".into()];
+        let rows = plotline_rows(&prj, &PlState { mode: PlMode::Threads, grid: false }, &[]);
+        let header = |k: &str| {
+            rows.iter().find_map(|r| match r {
+                PlRow::ThreadHeader { key, state } if key == k => Some(*state),
+                _ => None,
+            })
+        };
+        assert_eq!(header("storm"), Some('●'), "matched thread resolves");
+        assert_eq!(header("homecoming"), Some('○'), "setup-only thread stays open");
+        assert_eq!(rows.len(), 5, "two headers + three scene rows");
+    }
+
+    #[test]
+    fn auto_mode_degrades_to_threads_without_tracks() {
+        let mut prj = fixture();
+        prj.scenes[0].setup = vec!["storm".into()];
+        let rows = plotline_rows(&prj, &PlState::default(), &[]);
+        assert!(matches!(rows[0], PlRow::ThreadHeader { .. }));
+    }
+
+    #[test]
+    fn plot_grid_marks_single_and_shared_cells() {
+        let mut prj = lane_fixture();
+        prj.tracks.push(crate::project::Track {
+            name: "Suitors".into(),
+            stages: vec!["road of trials".into()],
+            arc_of: None,
+        });
+        // Second scene also rides the Suitors track at the same stage → ◆.
+        prj.scenes[1].plotlines.push("Suitors".into());
+        prj.scenes[1].stage = Some("road of trials".into());
+        let grid = plot_grid(&prj);
+        assert!(grid[0].contains("Suitors"), "track header row");
+        assert!(grid[0].contains("The Long"), "first track in header row");
+        let road = grid.iter().find(|g| g.contains("road of")).unwrap();
+        assert!(road.contains("◆"), "multi-track stage cell marks a diamond");
     }
 }

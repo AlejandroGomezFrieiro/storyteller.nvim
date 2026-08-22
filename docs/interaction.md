@@ -72,8 +72,11 @@ else:
 | `o` | Timeline | Toggle Reading order ⇄ Story order (both first-class views). |
 | `w` | Timeline | Cycle swimlane grouping: off / POV / location / chapter. |
 | `s` | Timeline | Mark two rows and swap their coordinates. |
-| `v` | Plotlines | Switch Lanes ⇄ Threads modes. |
-| `p` | Plotlines | Toggle the read-only plot grid (scenes × plotlines). |
+| `v` | Plotlines | Cycle Lanes ⇄ Threads ⇄ Auto modes. |
+| `p` | Plotlines | Toggle the read-only plot grid (stages × plotlines). |
+| `Tab` | Relations | Toggle Graph ⇄ Inspector panes. |
+| `h/l` | Relations | Walk the graph left/right from the focused node. |
+| `o` | Relations | Toggle orphan (unresolved-name) nodes. |
 
 ## Safety
 

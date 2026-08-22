@@ -103,6 +103,7 @@ fn main() -> Result<()> {
     let mut list_state = ratatui::widgets::ListState::default();
     let mut hud_message: Option<String> = None;
     let mut rel = ui::RelState::default();
+    let mut pl = ui::PlState::default();
     let mut quit = false;
 
     while !quit {
@@ -113,6 +114,7 @@ fn main() -> Result<()> {
             let edges = rel_view.graph.edges_of(node_i).len();
             rel.edge = rel.edge.min(edges.saturating_sub(1));
         }
+        let pl_rows = ui::plotline_rows(&prj, &pl, &store.staged);
 
         let axis_names = ui::axis_list(&prj, &axes);
         let axis_name = axis_names
@@ -142,6 +144,15 @@ fn main() -> Result<()> {
                 format!("rename kind of “{to}” to: {buf}▏ (Enter stage · Esc cancel)")
             }
             PromptKind::Filter => format!("filter: {buf}▏ (Enter apply · Esc clear)"),
+            PromptKind::PlotAttach { lane } => {
+                format!("scene to attach to “{lane}”: {buf}▏ (Enter stage · Esc cancel)")
+            }
+            PromptKind::ThreadAttach { key, .. } => {
+                format!("scene for thread “{key}”: {buf}▏ (Enter stage · Esc cancel)")
+            }
+            PromptKind::StageText { .. } => {
+                format!("stage: {buf}▏ (Enter stage · Esc cancel)")
+            }
         });
         let hud = ui::Hud {
             pending: store.pending(),
@@ -150,7 +161,8 @@ fn main() -> Result<()> {
         terminal.draw(|f| {
             let ctx_ref = (tab == Tab::Timeline).then_some(&tl_ctx);
             let rel_ref = (tab == Tab::Relations).then_some((&rel, &rel_view));
-            ui::render(f, &prj, &tab, &mut list_state, &theme, &hud, ctx_ref, rel_ref)
+            let pl_ref = (tab == Tab::Plotlines).then_some((&pl, &pl_rows[..]));
+            ui::render(f, &prj, &tab, &mut list_state, &theme, &hud, ctx_ref, rel_ref, pl_ref)
         })?;
         match event::read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => {
@@ -229,6 +241,45 @@ fn main() -> Result<()> {
                                     rel.node = 0;
                                     hud_message = Some(format!("filter: {}", text));
                                 }
+                                PromptKind::PlotAttach { lane } => match find_scene(&prj, &text) {
+                                    Some(sc) => {
+                                        store.stage(store::Op::AttachPlotline {
+                                            scene: sc,
+                                            name: lane,
+                                        });
+                                        hud_message =
+                                            Some("staged attach — S to apply".into());
+                                    }
+                                    None => {
+                                        hud_message =
+                                            Some(format!("no scene titled “{text}”"));
+                                    }
+                                },
+                                PromptKind::ThreadAttach { side, key } => {
+                                    match find_scene(&prj, &text) {
+                                        Some(sc) => {
+                                            store.stage(store::Op::AttachThread {
+                                                scene: sc,
+                                                side,
+                                                key,
+                                            });
+                                            hud_message = Some(
+                                                "staged thread attach — S to apply".into(),
+                                            );
+                                        }
+                                        None => {
+                                            hud_message =
+                                                Some(format!("no scene titled “{text}”"));
+                                        }
+                                    }
+                                }
+                                PromptKind::StageText { file, line } => {
+                                    store.stage(store::Op::SetStage {
+                                        scene: store::SceneRef { file, line },
+                                        stage: if text.is_empty() { None } else { Some(text) },
+                                    });
+                                    hud_message = Some("staged stage — S to apply".into());
+                                }
                             }
                         }
                         KeyCode::Backspace => {
@@ -285,7 +336,8 @@ fn main() -> Result<()> {
                             Tab::Dashboard => Tab::Timeline,
                             Tab::Corkboard => Tab::Dashboard,
                             Tab::Timeline => Tab::Corkboard,
-                            Tab::Relations => Tab::Dashboard,
+                            Tab::Plotlines => Tab::Timeline,
+                            Tab::Relations => Tab::Plotlines,
                         }
                     }
                     // Relations-surface verbs (docs/rework-plan.md §F):
@@ -410,6 +462,108 @@ fn main() -> Result<()> {
                             }
                         }
                     }
+                    // Plotlines-surface verbs (docs/rework-plan.md §G):
+                    // v modes · p grid · a attach · i stage · x detach.
+                    KeyCode::Char('v') if tab == Tab::Plotlines => {
+                        pl.mode = match pl.mode {
+                            ui::PlMode::Auto => ui::PlMode::Lanes,
+                            ui::PlMode::Lanes => ui::PlMode::Threads,
+                            ui::PlMode::Threads => ui::PlMode::Auto,
+                        };
+                        list_state.select(Some(0));
+                        hud_message = Some(match pl.mode {
+                            ui::PlMode::Auto => "plotlines: auto".into(),
+                            ui::PlMode::Lanes => "plotlines: lanes".into(),
+                            ui::PlMode::Threads => "plotlines: threads".into(),
+                        });
+                    }
+                    KeyCode::Char('p') if tab == Tab::Plotlines => {
+                        pl.grid = !pl.grid;
+                    }
+                    KeyCode::Char('a') if tab == Tab::Plotlines => {
+                        match pl_rows.get(list_state.selected().unwrap_or(0)) {
+                            Some(ui::PlRow::LaneHeader(t)) => {
+                                prompt = Some((
+                                    PromptKind::PlotAttach { lane: t.name.clone() },
+                                    String::new(),
+                                ));
+                            }
+                            Some(ui::PlRow::Stage { lane, .. })
+                            | Some(ui::PlRow::Ghost { lane, .. }) => {
+                                prompt = Some((
+                                    PromptKind::PlotAttach { lane: lane.name.clone() },
+                                    String::new(),
+                                ));
+                            }
+                            Some(ui::PlRow::ThreadHeader { key, .. }) => {
+                                prompt = Some((
+                                    PromptKind::ThreadAttach {
+                                        side: store::Side::Setup,
+                                        key: key.clone(),
+                                    },
+                                    String::new(),
+                                ));
+                            }
+                            Some(ui::PlRow::ThreadScene { side, key, .. }) => {
+                                prompt = Some((
+                                    PromptKind::ThreadAttach {
+                                        side: *side,
+                                        key: key.clone(),
+                                    },
+                                    String::new(),
+                                ));
+                            }
+                            None => hud_message = Some("nothing focused".into()),
+                        }
+                    }
+                    KeyCode::Char('i') if tab == Tab::Plotlines => {
+                        match pl_rows.get(list_state.selected().unwrap_or(0)) {
+                            Some(ui::PlRow::Stage { scene, .. }) => {
+                                prompt = Some((
+                                    PromptKind::StageText {
+                                        file: scene.file.to_string_lossy().to_string(),
+                                        line: scene.line,
+                                    },
+                                    String::new(),
+                                ));
+                            }
+                            _ => {
+                                hud_message =
+                                    Some("i sets the stage of an attached scene".into());
+                            }
+                        }
+                    }
+                    KeyCode::Char('x') if tab == Tab::Plotlines => {
+                        match pl_rows.get(list_state.selected().unwrap_or(0)) {
+                            Some(ui::PlRow::Stage { lane, scene, .. }) => {
+                                store.stage(store::Op::DetachPlotline {
+                                    scene: store::SceneRef {
+                                        file: scene.file.to_string_lossy().to_string(),
+                                        line: scene.line,
+                                    },
+                                    name: lane.name.clone(),
+                                });
+                                hud_message =
+                                    Some("staged detach — S to apply".into());
+                            }
+                            Some(ui::PlRow::ThreadScene { side, key, scene, .. }) => {
+                                store.stage(store::Op::DetachThread {
+                                    scene: store::SceneRef {
+                                        file: scene.file.to_string_lossy().to_string(),
+                                        line: scene.line,
+                                    },
+                                    side: *side,
+                                    key: key.clone(),
+                                });
+                                hud_message =
+                                    Some("staged thread detach — S to apply".into());
+                            }
+                            _ => {
+                                hud_message =
+                                    Some("x detaches an attached scene row".into());
+                            }
+                        }
+                    }
                     KeyCode::Char('1') => tab = Tab::Dashboard,
                     KeyCode::Char('2') => tab = Tab::Corkboard,
                     KeyCode::Char('3') => tab = Tab::Timeline,
@@ -491,6 +645,15 @@ fn main() -> Result<()> {
                                     sc.line + 1,
                                 )
                             })
+                        } else if tab == Tab::Plotlines {
+                            match pl_rows.get(list_state.selected().unwrap_or(0)) {
+                                Some(ui::PlRow::Stage { scene, .. })
+                                | Some(ui::PlRow::ThreadScene { scene, .. }) => Some((
+                                    scene.file.to_string_lossy().to_string(),
+                                    scene.line,
+                                )),
+                                _ => None,
+                            }
                         } else {
                             prj.scenes
                                 .get(list_state.selected().unwrap_or(0))
@@ -556,6 +719,22 @@ enum PromptKind {
     EdgeKind { file: String, line: usize, to: String },
     RenameKind { file: String, line: usize, to: String },
     Filter,
+    /// Attach a scene (entered by title) to a plotline lane.
+    PlotAttach { lane: String },
+    /// Attach a scene to one side of a setup/payoff thread.
+    ThreadAttach { side: store::Side, key: String },
+    /// Set the stage of an already-known scene.
+    StageText { file: String, line: usize },
+}
+
+fn find_scene(prj: &project::Project, title: &str) -> Option<store::SceneRef> {
+    prj.scenes
+        .iter()
+        .find(|s| s.title.eq_ignore_ascii_case(title))
+        .map(|s| store::SceneRef {
+            file: s.file.to_string_lossy().to_string(),
+            line: s.line,
+        })
 }
 
 // The selectable (non-header) row under the cursor.

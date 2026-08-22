@@ -32,6 +32,9 @@ pub struct Scene {
     pub events: Vec<String>,
     /// Secondary placements parsed out of `also:` flow-map strings.
     pub also: Vec<(String, String)>,
+    /// Setup/payoff thread keys.
+    pub setup: Vec<String>,
+    pub payoff: Vec<String>,
 }
 
 /// A plotline card under references/plotlines/.
@@ -156,7 +159,16 @@ fn parse_placement(item: &str) -> Option<(String, String)> {
     Some((axis?, coord))
 }
 
-type Extras = (Option<String>, Option<String>, Option<String>, Vec<String>, Vec<String>, Vec<(String, String)>);
+type Extras = (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Vec<String>,
+    Vec<String>,
+    Vec<(String, String)>,
+    Vec<String>,
+    Vec<String>,
+);
 
 fn parse_scene_extras(block: &[&str]) -> Extras {
     let also = scene_list(block, "also")
@@ -170,6 +182,8 @@ fn parse_scene_extras(block: &[&str]) -> Extras {
         scene_list(block, "plotlines"),
         scene_list(block, "events"),
         also,
+        scene_list(block, "setup"),
+        scene_list(block, "payoff"),
     )
 }
 
@@ -401,7 +415,7 @@ fn parse_scene_block(block: &[&str]) -> (Option<String>, Option<String>, Option<
 /// Apply every parsed field to a freshly-opened scene.
 fn finalize_scene(mut sc: Scene, block: &[&str]) -> Scene {
     let (status, pov, location, day) = parse_scene_block(block);
-    let (axis, mode, stage, plotlines, events, also) = parse_scene_extras(block);
+    let (axis, mode, stage, plotlines, events, also, setup, payoff) = parse_scene_extras(block);
     sc.status = status;
     sc.pov = pov;
     sc.location = location;
@@ -412,6 +426,8 @@ fn finalize_scene(mut sc: Scene, block: &[&str]) -> Scene {
     sc.plotlines = plotlines;
     sc.events = events;
     sc.also = also;
+    sc.setup = setup;
+    sc.payoff = payoff;
     sc
 }
 
@@ -510,6 +526,39 @@ pub fn load(root: &Path) -> Result<Project> {
     prj.tracks = load_tracks(root);
     prj.cards = load_cards(root, &chapter_texts);
     Ok(prj)
+}
+
+/// One setup/payoff thread grouped across scenes (mirrors index.plot_threads).
+#[derive(Debug, Clone, Default)]
+pub struct Thread {
+    pub key: String,
+    pub setup: Vec<usize>,  // scene indices
+    pub payoff: Vec<usize>,
+}
+
+impl Project {
+    /// Threads in key order; a scene may appear on either or both sides.
+    /// Keys group case-insensitively (mirrors index.plot_threads).
+    pub fn threads(&self) -> Vec<Thread> {
+        let mut map: std::collections::BTreeMap<String, Thread> = std::collections::BTreeMap::new();
+        let mut display: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for (i, sc) in self.scenes.iter().enumerate() {
+            for (keys, is_setup) in [(&sc.setup, true), (&sc.payoff, false)] {
+                for key in keys {
+                    let k = key.to_lowercase();
+                    let name = display.entry(k.clone()).or_insert_with(|| key.clone()).clone();
+                    let t = map.entry(k).or_default();
+                    t.key = name;
+                    if is_setup {
+                        t.setup.push(i);
+                    } else {
+                        t.payoff.push(i);
+                    }
+                }
+            }
+        }
+        map.into_values().collect()
+    }
 }
 
 impl Project {
